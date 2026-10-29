@@ -177,7 +177,8 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		k := msg
 		switch {
-		case k.String() == "f10":
+		case k.String() == "f10", k.String() == "alt+0":
+			// Alt+0 is the F10 fallback for terminals that swallow F10.
 			return w, tea.Quit
 
 		case k.String() == "esc":
@@ -273,10 +274,8 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (w *Wizard) View() tea.View {
 	// Minimum terminal size check — same as the main app.
-	if w.width > 0 && w.height > 0 && (w.width < 75 || w.height < 24) {
-		msg := fmt.Sprintf("\n  CQOps — Terminal too small: %dx%d (min 75x24)\n\n  Press F10 and then Enter to quit",
-			w.width, w.height)
-		return tea.NewView(ErrorStyle.Render(msg))
+	if w.width > 0 && w.height > 0 && (w.width < minTermW || w.height < minTermH) {
+		return tea.NewView(refusalView(w.width, w.height))
 	}
 
 	var content string
@@ -442,7 +441,7 @@ func (w *Wizard) viewStation() string {
 		key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab", "Navigate")),
 		key.NewBinding(key.WithKeys("space"), key.WithHelp("Space", "Toggle")),
 		key.NewBinding(key.WithKeys("ctrl+a"), key.WithHelp("Ctrl+A", "Advanced")),
-		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
+		key.NewBinding(key.WithKeys("f10", "alt+0"), key.WithHelp("F10/Alt+0", "Quit")),
 	)
 	return w.wizardLayout(body, help)
 }
@@ -456,7 +455,7 @@ func (w *Wizard) viewRig() string {
 		key.NewBinding(key.WithKeys("space"), key.WithHelp("Space", "Toggle flrig")),
 		key.NewBinding(key.WithKeys("↑/↓", "tab"), key.WithHelp("↑↓/Tab", "Navigate")),
 		key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
-		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
+		key.NewBinding(key.WithKeys("f10", "alt+0"), key.WithHelp("F10/Alt+0", "Quit")),
 	)
 	return w.wizardLayout(body, help)
 }
@@ -482,7 +481,7 @@ func (w *Wizard) viewSummary() string {
 	help := wizHelp(
 		key.NewBinding(key.WithKeys("space", "enter"), key.WithHelp("Space", "Save & Start")),
 		key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
-		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
+		key.NewBinding(key.WithKeys("f10", "alt+0"), key.WithHelp("F10/Alt+0", "Quit")),
 	)
 	return w.wizardLayout(body, help)
 }

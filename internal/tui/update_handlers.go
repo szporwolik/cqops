@@ -235,15 +235,30 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	}
 	// Periodic DXCC backfill — catch any QSOs that escaped enrichment
 	// (legacy imports, ADIF loads, Wavelog downloads before Big CTY was
-	// available). Runs every 30 ticks (~30 s), processes 50 rows max.
-	if m.App.BigCTY != nil && m.App.DB != nil && m.tickCount%30 == 0 {
-		n, _ := backfillMissingDXCCLimit(m.App.DB, m.App.BigCTY, 50)
-		if n > 0 {
-			applog.Debug("DXCC: periodic backfill updated", "count", n)
+	// available). Every 30 ticks (~30 s), 50 rows per pass.
+	//
+	// The pass writes a batch of contacts and their worked-index rows in one
+	// transaction, so running it here blocked the keyboard: 395 ms for a batch
+	// in a 10k-contact log and ~6 s in a 100k one, every 30 s while the log
+	// still had rows without an entity. It runs as a command now, at most one
+	// at a time, and the result is installed by applyDXCCBackfill.
+	if m.backfill.fullPending || m.tickCount%30 == 0 {
+		limit := dxccBackfillBatch
+		if m.backfill.fullPending {
+			limit = 0 // fresh CTY table: drain everything
+		}
+		if c := m.dxccBackfillCmd(limit); c != nil {
+			cmds = append(cmds, c)
 		}
 	}
 	// Push current state to the dashboard (cheap — early-exits if unchanged).
 	m.pushDashboardState()
+	// The stats aggregates run off the update loop: pushDashboardState only
+	// marks them stale, so the application and keyboard stay responsive while
+	// GetDashboardStats scans the event window.
+	if c := m.dashboardStatsCmd(); c != nil {
+		cmds = append(cmds, c)
+	}
 	if cmd != nil {
 		cmds = append(cmds, cmd)
 	}
@@ -255,6 +270,9 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 // and an optional command to batch.
 func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 	switch r := msg.(type) {
+	case dashboardStatsMsg:
+		// Numbers computed off the update loop; only the install touches state.
+		return true, m.applyDashboardStats(r)
 	case inetResultMsg:
 		if bool(r) {
 			// Internet reachable — reset streak and mark online immediately.
@@ -333,7 +351,11 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		if r.bigCTY != nil && m.App.Config.General.UseCTY {
 			m.App.BigCTY = r.bigCTY
 			if m.App.DB != nil {
-				extra = dxccBackfillCmd(m.App.DB, r.bigCTY)
+				// A new table can resolve rows the previous one could not:
+				// drain the whole log. The request survives a pass that is
+				// already running — the next tick picks it up.
+				m.backfill.fullPending = true
+				extra = m.dxccBackfillCmd(0)
 			}
 		}
 		if r.scp != nil && m.App.Config.General.UseSCP {
@@ -352,9 +374,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		}
 		return true, extra
 	case dxccBackfillMsg:
-		if r.count > 0 {
-			applog.Info("DXCC: backfilled missing dxcc", "count", r.count)
-		}
+		m.applyDXCCBackfill(r)
 		return true, nil
 	case callFilterResultMsg:
 		m.applyCallFilterResult(r)

@@ -19,6 +19,7 @@ var Logger *slog.Logger
 var (
 	mu        sync.Mutex
 	entries   []Entry
+	revision  uint64 // bumped by every Append, even when the ring is at capacity
 	logDir    string
 	beepFn    func() // called on errors when set (see SetBeepFunc)
 	debugMode bool   // when false, Debug/DebugDetail are suppressed
@@ -179,16 +180,47 @@ func Append(level, msg, details string) {
 	if len(entries) > maxStored {
 		entries = entries[len(entries)-maxStored:]
 	}
+	revision++
 	mu.Unlock()
 }
 
-// Entries returns a sorted copy of all in-memory log entries.
+// Revision returns a counter that changes on every appended entry. The ring keeps
+// only the newest maxStored entries, so the number of stored entries stops
+// changing once it is full while the buffer keeps turning — anything that caches
+// derived content has to watch this, not the count.
+func Revision() uint64 {
+	mu.Lock()
+	defer mu.Unlock()
+	return revision
+}
+
+// Entries returns a copy of the in-memory log entries, oldest first.
+//
+// The order is the order they were appended in, which is the only order that is
+// right: the stored stamp is a wall clock without a date ("15:04:05"), so sorting
+// by it puts this morning's entries before last night's and — because the sort
+// used to run on the shared buffer — also made the ring evict whichever entry
+// happened to sort first instead of the oldest one. The displayed time is
+// unchanged.
 func Entries() []Entry {
 	mu.Lock()
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Time < entries[j].Time })
+	defer mu.Unlock()
+	return copyEntriesLocked()
+}
+
+// EntriesWithRevision returns the entries and the revision they describe. Both
+// are taken under one lock, so a caller that caches the copy can never claim it
+// is newer than the entries it contains.
+func EntriesWithRevision() ([]Entry, uint64) {
+	mu.Lock()
+	defer mu.Unlock()
+	return copyEntriesLocked(), revision
+}
+
+// copyEntriesLocked copies the ring in append order. Callers hold mu.
+func copyEntriesLocked() []Entry {
 	result := make([]Entry, len(entries))
 	copy(result, entries)
-	mu.Unlock()
 	return result
 }
 

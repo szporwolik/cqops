@@ -99,6 +99,26 @@ done < <(grep -rlE '\bCQOPS\b|\bCqOps\b' "$ROOT" \
 	--include='*.desktop' --include='*.nsi' --include='*.md' 2>/dev/null || true)
 echo ""
 
+# ── 9. Release downloads fail on HTTP errors ───────────────────────────
+# curl without -f exits 0 for a 404/503 *page*, and the release workflow
+# hashes what it downloads into PKGBUILD: a GitHub hiccup during publication
+# would ship an AUR package whose sources never match, and nobody could build.
+# Matches every way of writing to a file: a standalone `-o FILE`, a clustered
+# flag (`-sSLo FILE` — how the bug was written), and `--output`.
+echo "[9] Release workflow downloads fail on HTTP errors..."
+while IFS= read -r line; do
+	# One pattern: "-f" is a substring of every spelling we accept (-fsSL,
+	# --fail), so a separate --fail arm would be dead code.
+	case "$line" in
+		*"-f"*) ;;
+		*)
+			fail "curl-fail" \
+				"${line%%:*} downloads with curl but without -f — an HTTP error page would be hashed as the source"
+			;;
+	esac
+done < <(grep -nE 'curl[^|]*(--output|-[A-Za-z]*[oO]([[:space:]]|$))' "$ROOT/.github/workflows/release.yml" || true)
+echo ""
+
 echo "=== Result ==="
 if [ "$VIOLATIONS" -eq 0 ]; then
 	green "All branding checks passed ($VIOLATIONS violations)."

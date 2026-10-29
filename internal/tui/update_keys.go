@@ -721,7 +721,9 @@ func (m *Model) initLogbookEditor() {
 	} else {
 		m.ui.logbookEditor.SetContestID("", "", "", "")
 	}
-	m.ui.logbookEditor.loadPage()
+	if err := m.ui.logbookEditor.loadPage(); err != nil {
+		m.toasts.Error("Logbook: " + err.Error())
+	}
 }
 
 func clampAz(a float64) float64 {

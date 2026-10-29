@@ -28,14 +28,33 @@ type ToastQueue struct {
 	items    []Toast
 	lastMsg  string
 	lastTime time.Time
-	lastPush time.Time // global rate limiter: min interval between any toasts
+	lastPush time.Time // rate limiter for notices: min interval between any toast
+	lastErr  time.Time // separate spacing for errors, which outrank notices
 }
 
-const toastMaxAge = 5 * time.Second
-const toastMaxItems = 20
-const toastDedupWindow = 2 * time.Second        // suppress identical messages within this window
-const toastMinInterval = 500 * time.Millisecond // rate limit: at most one toast per half second
+const (
+	toastMaxAge      = 5 * time.Second
+	toastMaxItems    = 20
+	toastDedupWindow = 2 * time.Second // suppress identical messages within this window
+)
 
+// Pacing between toasts. Variables rather than constants so a test can shrink
+// them; production keeps the values assigned here.
+var (
+	// toastMinInterval paces notices (info/success/warning): at most one per
+	// half second, so a redraw storm cannot stack them.
+	toastMinInterval = 500 * time.Millisecond
+	// toastErrorMinSpacing paces errors among themselves.
+	toastErrorMinSpacing = time.Second
+)
+
+// Notice pacing: at most one informational/success/warning toast per
+// toastMinInterval, so a redraw storm cannot stack them.
+//
+// Errors are exempt and paced among themselves instead (toastErrorMinSpacing):
+// a toast that just appeared must never swallow "QSO save failed" — the operator
+// needs to see that something failed — while an error loop still cannot flood the
+// overlay.
 func NewToastQueue() *ToastQueue {
 	return &ToastQueue{}
 }
@@ -44,24 +63,30 @@ func (tq *ToastQueue) Push(level ToastLevel, msg string) {
 	if msg == "" {
 		return
 	}
+	now := time.Now()
 	tq.mu.Lock()
 	// Dedup: suppress identical messages within the dedup window.
-	if msg == tq.lastMsg && time.Since(tq.lastTime) < toastDedupWindow {
+	if msg == tq.lastMsg && now.Sub(tq.lastTime) < toastDedupWindow {
 		tq.mu.Unlock()
 		return
 	}
-	// Rate limit: at most one toast per minimum interval.
-	if time.Since(tq.lastPush) < toastMinInterval {
+	if level == ToastError {
+		if now.Sub(tq.lastErr) < toastErrorMinSpacing {
+			tq.mu.Unlock()
+			return
+		}
+		tq.lastErr = now
+	} else if now.Sub(tq.lastPush) < toastMinInterval {
 		tq.mu.Unlock()
 		return
 	}
 	tq.lastMsg = msg
-	tq.lastTime = time.Now()
-	tq.lastPush = tq.lastTime
+	tq.lastTime = now
+	tq.lastPush = now
 	tq.items = append(tq.items, Toast{
 		Level:   level,
 		Message: msg,
-		Created: tq.lastTime,
+		Created: now,
 	})
 	// Cap queue size to prevent unbounded growth on error loops.
 	if len(tq.items) > toastMaxItems {

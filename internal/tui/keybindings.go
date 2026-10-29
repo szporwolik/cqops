@@ -49,8 +49,11 @@ type KeyMap struct {
 func DefaultKeyMap() KeyMap {
 	return KeyMap{
 		Quit: key.NewBinding(
-			key.WithKeys("f10"),
-			key.WithHelp("F10", "Quit"),
+			// Alt+0 is the F10 fallback: some terminals (and every Linux
+			// console) consume F10 or reserve it for their own menu, and the
+			// operator then has no way to quit.
+			key.WithKeys("f10", "alt+0"),
+			key.WithHelp("F10/Alt+0", "Quit"),
 		),
 		QSOForm: key.NewBinding(
 			key.WithKeys("f1", "alt+1"),

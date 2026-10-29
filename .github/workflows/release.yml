@@ -15,11 +15,19 @@ jobs:
   # Validate version consistency between tag, VERSION file, and input.
   # ──────────────────────────────────────────────────────────────────────────
   validate-version:
-    runs-on: ubuntu-latest
+    # Pinned on purpose: the release output must be reproducible, and
+    # `ubuntu-latest` is being migrated to Ubuntu 26 in waves since
+    # 2026-10-19 (actions/runner-images#14748). CI keeps `latest` so a
+    # future image change surfaces there first.
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.value }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          # Full history and tags: the tag check below has to see an existing
+          # v<VERSION> tag to tell whether it points at this commit.
+          fetch-depth: 0
 
       - name: Resolve version
         id: version
@@ -38,16 +46,27 @@ jobs:
           echo "value=$V" >> $GITHUB_OUTPUT
           echo "Version: $V"
 
+      # The release step creates a missing tag at the built commit, but the
+      # GitHub Releases API ignores target_commitish for a tag that already
+      # exists — a manual run from a branch would then publish artifacts built
+      # from one commit under a tag (and source archives) pointing at another.
+      # Fail here, before twenty minutes of cross-compilation.
+      - name: Verify the tag points at the built commit
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+          SHA: ${{ github.sha }}
+        run: ./scripts/check-release-tag.sh "$VERSION" "$SHA"
+
   # ──────────────────────────────────────────────────────────────────────────
   # Build all Go binaries + Linux packages (deb + rpm)
   # ──────────────────────────────────────────────────────────────────────────
   build-unix:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: validate-version
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.26'
 
@@ -181,7 +200,7 @@ jobs:
           sha256sum * > checksums.txt
           cat checksums.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-unix
           path: dist/*
@@ -193,9 +212,9 @@ jobs:
     runs-on: windows-latest
     needs: [build-unix, validate-version]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-unix
           path: dist/
@@ -237,7 +256,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Smoke test failed" }
           Write-Host "Smoke test passed"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-installer
           path: dist/cqops-setup.exe
@@ -246,16 +265,16 @@ jobs:
   # Create GitHub Release
   # ──────────────────────────────────────────────────────────────────────────
   create-github-release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [build-unix, build-installer]
     outputs:
       version: ${{ steps.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist/
           merge-multiple: true
@@ -314,11 +333,25 @@ jobs:
           echo "Release notes:"
           cat "$NOTES"
 
+      # Repeated immediately before the release call: validate-version ran before
+      # the builds, and a tag pushed in the meantime would be the one the API
+      # ignores target_commitish for.
+      - name: Verify the tag points at the built commit
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          SHA: ${{ github.sha }}
+        run: ./scripts/check-release-tag.sh "$VERSION" "$SHA"
+
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.meta.outputs.version }}
           name: v${{ steps.meta.outputs.version }}
+          # Pins the tag to the commit this run built. Without it a manual run
+          # from a branch lets GitHub create the tag on the repository's default
+          # branch, so the tag and its source archives would describe different
+          # code than the attached artifacts.
+          target_commitish: ${{ github.sha }}
           body_path: release-notes.md
           files: dist/*
 
@@ -326,15 +359,15 @@ jobs:
   # Publish to Cloudsmith (deb + rpm)
   # ──────────────────────────────────────────────────────────────────────────
   publish-cloudsmith:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: create-github-release
     if: vars.CLOUDSMITH_NAMESPACE != '' && vars.CLOUDSMITH_REPOSITORY != ''
     permissions:
       contents: write  # needed for gh release delete
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist/
           merge-multiple: true
@@ -417,7 +450,7 @@ jobs:
   # Publish AUR package (cqops-bin)
   # ──────────────────────────────────────────────────────────────────────────
   publish-aur:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: create-github-release
     if: true
     steps:
@@ -447,23 +480,55 @@ jobs:
           set -euo pipefail
           V="$VERSION"
 
-          # Download the amd64 tarball and compute SHA-256.
+          # fetch <url> <dest> — download that fails on an HTTP error. Without -f
+          # curl exits 0 for a 404/503 *page*, so the body of the error would be
+          # hashed and published as the checksum: AUR then hands every user a
+          # PKGBUILD whose sources never match, and the package cannot be built.
+          # Retries ride out a one-off blip; nothing is written or pushed unless
+          # all three downloads really arrived.
+          fetch() {
+            local url="$1" dest="$2"
+            if ! curl -fsSL --retry 3 --retry-delay 3 --retry-connrefused -o "$dest" "$url"; then
+              echo "::error::download failed (HTTP error or no connection): ${url}" >&2
+              return 1
+            fi
+            if [ ! -s "$dest" ]; then
+              echo "::error::download is empty: ${url}" >&2
+              return 1
+            fi
+          }
+
+          # Download the amd64 tarball and compute SHA-256. The body is checked
+          # to be an archive as well: a page served with 200 (a proxy or CDN
+          # error page) would otherwise be hashed just like a real release.
           TARBALL="cqops-linux-amd64.tar.gz"
           URL="https://github.com/szporwolik/cqops/releases/download/v${V}/${TARBALL}"
-          curl -sSLo "/tmp/${TARBALL}" "$URL"
+          fetch "$URL" "/tmp/${TARBALL}"
+          if ! tar tzf "/tmp/${TARBALL}" > /dev/null 2>&1; then
+            echo "::error::downloaded ${TARBALL} is not a gzip tarball: ${URL}" >&2
+            exit 1
+          fi
           TARBALL_SHA256=$(sha256sum "/tmp/${TARBALL}" | awk '{print $1}')
           rm "/tmp/${TARBALL}"
 
           ICON_URL="https://raw.githubusercontent.com/szporwolik/cqops/v${V}/assets/cqops-icon.svg"
 
           # Download the icon and compute SHA-256 for AUR integrity.
-          curl -sSLo "/tmp/cqops-icon.svg" "$ICON_URL"
+          fetch "$ICON_URL" "/tmp/cqops-icon.svg"
+          if ! grep -q '<svg' "/tmp/cqops-icon.svg"; then
+            echo "::error::downloaded icon is not an SVG: ${ICON_URL}" >&2
+            exit 1
+          fi
           ICON_SHA256=$(sha256sum "/tmp/cqops-icon.svg" | awk '{print $1}')
           rm "/tmp/cqops-icon.svg"
 
           # Download the canonical .desktop file and compute its SHA-256.
           DESKTOP_URL="https://raw.githubusercontent.com/szporwolik/cqops/v${V}/installer/cqops.desktop"
-          curl -sSLo "/tmp/cqops.desktop" "$DESKTOP_URL"
+          fetch "$DESKTOP_URL" "/tmp/cqops.desktop"
+          if ! grep -q '\[Desktop Entry\]' "/tmp/cqops.desktop"; then
+            echo "::error::downloaded .desktop file has no [Desktop Entry] group: ${DESKTOP_URL}" >&2
+            exit 1
+          fi
           DESKTOP_SHA256=$(sha256sum "/tmp/cqops.desktop" | awk '{print $1}')
           rm "/tmp/cqops.desktop"
 
@@ -638,7 +703,7 @@ jobs:
 
       - name: Save generated WinGet manifests
         if: steps.gate.outputs.skip != 'true' && always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: winget-manifests-${{ needs.create-github-release.outputs.version }}
           path: manifests/**
@@ -649,13 +714,13 @@ jobs:
   # Final cleanup: keep only 3 most recent GitHub releases
   # ──────────────────────────────────────────────────────────────────────────
   prune-releases:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: create-github-release
     if: false  # disabled — re-enable when ready to auto-prune old releases
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Prune old GitHub releases (keep latest 3)
         env:

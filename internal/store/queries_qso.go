@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -40,8 +41,18 @@ const qsoSelectCols = `id, call, qso_date, time_on, time_off, band, freq, freq_r
 		dxcc,
 		created_at, updated_at, wavelog_dirty, wavelog_dirty_rev`
 
-// placeholders56 is a pre-computed string of 56 comma-separated "?" markers,
-// used by InsertQSO to avoid a per-insert []string allocation.
+// qsoNewestFirst is the logbook ordering every newest-first list uses: date,
+// then start time, then the row id. The id tiebreaker is not decoration — an
+// imported batch or a contest run gives many contacts the same date and time,
+// and without it two consecutive pages can repeat or skip a contact.
+//
+// idx_qsos_date_time_id mirrors this order literally (DESC on all three
+// columns), which is the only way SQLite can serve `id DESC` from the index:
+// it appends the rowid to every index key, so a (qso_date, time_on) index is
+// really ordered by rowid ASC in the third position and the plan adds a
+// "USE TEMP B-TREE FOR LAST TERM OF ORDER BY" step that sorts the whole
+// filtered set before the OFFSET is skipped.
+const qsoNewestFirst = `qso_date DESC, time_on DESC, id DESC`
 const placeholders56 = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
 
 // insertQSO writes one QSO through the given executor (a *sql.DB or a
@@ -267,33 +278,104 @@ func countQSOsContest(db *sql.DB, contestID string) (int, error) {
 	return a + b, nil
 }
 
-// ListContestQSOStamps returns the timing fields of every QSO in a contest:
-// qso_date + time_on (the on-air time) plus created_at as a fallback for rows
-// without a usable time. The contest rate panel needs every row — a row cap
-// skewed session, peak and window numbers — but none of the other columns.
-func ListContestQSOStamps(db *sql.DB, contestID string) ([]qso.QSO, error) {
+// ListContestQSOStamps returns the on-air time (qso_date + time_on, UTC) of
+// every QSO in a contest, newest first. The contest rate panel needs every row
+// — a row cap skews session, peak and window numbers — and nothing else.
+//
+// It reads two indexed columns and returns bare times instead of a QSO per
+// contact: handing back []qso.QSO for a 50k-contest allocated ~300 MiB per
+// refresh, because each struct carries the whole record. created_at is fetched
+// only for the rare row whose date/time is unusable, and is its fallback
+// timestamp. The index (contest_id, qso_date DESC, time_on DESC) provides the
+// order, so the result is verified to be sorted rather than always sorted.
+func ListContestQSOStamps(db *sql.DB, contestID string) ([]time.Time, error) {
 	if contestID == "" {
 		return nil, nil
 	}
 	rows, err := db.Query(
-		`SELECT qso_date, time_on, created_at FROM qsos WHERE contest_id = ?`, contestID)
+		`SELECT id, qso_date, time_on FROM qsos WHERE contest_id = ?
+		 ORDER BY qso_date DESC, time_on DESC`, contestID)
 	if err != nil {
 		return nil, fmt.Errorf("list contest stamps: %w", err)
 	}
-	defer rows.Close()
-	var out []qso.QSO
+	var out []time.Time
+	var fallback []int64
 	for rows.Next() {
-		var q qso.QSO
-		var created string
-		if err := rows.Scan(&q.QSODate, &q.TimeOn, &created); err != nil {
+		var id int64
+		var date, timeOn string
+		if err := rows.Scan(&id, &date, &timeOn); err != nil {
+			rows.Close()
 			return nil, fmt.Errorf("scan contest stamp: %w", err)
 		}
-		if t, err := time.Parse(time.RFC3339, created); err == nil {
-			q.CreatedAt = t
+		if t, ok := qso.ADIFTime(date, timeOn); ok {
+			out = append(out, t)
+			continue
 		}
-		out = append(out, q)
+		fallback = append(fallback, id)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	for _, id := range fallback {
+		var created string
+		if err := db.QueryRow(`SELECT COALESCE(created_at, '') FROM qsos WHERE id = ?`, id).Scan(&created); err != nil {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, created)
+		if err != nil {
+			out = append(out, time.Time{}) // no usable timestamp at all
+			continue
+		}
+		out = append(out, t.UTC())
+	}
+	for i := 1; i < len(out); i++ {
+		if out[i].After(out[i-1]) {
+			sort.Slice(out, func(a, b int) bool { return out[a].After(out[b]) })
+			break
+		}
+	}
+	return out, nil
+}
+
+// QSORank returns the 0-based position of a contact in the newest-first order
+// the paged list is cut from (qso_date DESC, time_on DESC, id DESC), with the
+// contest filter applied. found reports whether that contact is still in the
+// list: a deleted or filtered-out row has no position.
+//
+// The logbook editor anchors its selection on the contact instead of a row
+// position, because a contact appended while a page is on screen shifts every
+// position below it — after such a shift the editor has to ask where its
+// contact went. The count is a range query on idx_qsos_date_time_id.
+func QSORank(db *sql.DB, id int64, contestID string) (rank int, found bool, err error) {
+	scope, scopeArgs := "", []any{}
+	if contestID != "" {
+		// The same scope the paged list merges: contacts tagged with this
+		// contest, plus the ones only tagged by ADIF id.
+		scope = ` AND (contest_id = ? OR (contest_adif_id = ? AND (contest_id IS NULL OR contest_id = '' OR contest_id != ?)))`
+		scopeArgs = []any{contestID, contestID, contestID}
+	}
+
+	var date, timeOn string
+	args := append([]any{id}, scopeArgs...)
+	if err := db.QueryRow(`SELECT qso_date, time_on FROM qsos WHERE id = ?`+scope, args...).
+		Scan(&date, &timeOn); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, false, nil
+		}
+		return 0, false, fmt.Errorf("qso rank lookup: %w", err)
+	}
+
+	// Rows that sort before it: a later date, the same date and a later time,
+	// or the same date and time and a higher row id (the order is newest first).
+	args = append(append([]any{}, scopeArgs...), date, date, timeOn, timeOn, id)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE 1=1`+scope+
+		` AND (qso_date > ? OR (qso_date = ? AND (time_on > ? OR (time_on = ? AND id > ?))))`,
+		args...).Scan(&rank); err != nil {
+		return 0, false, fmt.Errorf("qso rank count: %w", err)
+	}
+	return rank, true, nil
 }
 
 // ListQSOs returns recent QSOs ordered by QSO date/time descending.
@@ -316,7 +398,7 @@ func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 		query += ` WHERE contest_id = ? OR contest_adif_id = ?`
 		args = append(args, contestID, contestID)
 	}
-	query += ` ORDER BY qso_date DESC, time_on DESC, id DESC`
+	query += ` ORDER BY ` + qsoNewestFirst
 	var rows *sql.Rows
 	var err error
 	if limit > 0 {
@@ -414,7 +496,7 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos` + where + `
-		ORDER BY qso_date DESC, time_on DESC, id DESC
+		ORDER BY ` + qsoNewestFirst + `
 		LIMIT ? OFFSET ?`
 	args := append(whereArgs, limit, offset)
 	rows, err := db.Query(query, args...)
@@ -611,7 +693,7 @@ func SearchQSOs(db *sql.DB, query, contestID string, limit int) ([]qso.QSO, erro
 		args = append(args, contestID, contestID)
 	}
 	sql += `
-		ORDER BY qso_date DESC, time_on DESC, id DESC
+		ORDER BY ` + qsoNewestFirst + `
 		LIMIT ?`
 	args = append(args, limit)
 
@@ -1017,15 +1099,21 @@ func ExportQSOsSnapshot(db *sql.DB, contestID string, orderAsc bool, fn func(q q
 	return tx.Commit()
 }
 
-// ListQSOsFromDate returns QSOs with qso_date >= the given date, newest-first,
-// capped at limit. Used by the dashboard to avoid loading unbounded history.
+// ListQSOsFromDate returns complete QSOs with qso_date >= the given date,
+// newest-first, capped at limit.
+//
+// The dashboard renders fourteen columns and reads up to 5000 rows on the TUI
+// update path, so it uses ListDashboardQSOsFromDate (dashboard_qsos.go) instead:
+// this loader scans the whole record — notes, references, Wavelog bookkeeping —
+// which the browser never sees. Keep this one for callers that need the record,
+// and keep the two in step: dashboard_qsos_test.go compares them field by field.
 func ListQSOsFromDate(db *sql.DB, date string, limit int) ([]qso.QSO, error) {
 	// Must select the full qsoSelectCols set — listQSOsByQuery scans all of
 	// them. The old inline projection omitted dxcc, wavelog_dirty and
 	// wavelog_dirty_rev, so every scan failed with a destination mismatch
 	// and the dashboard could not load recent QSOs at all.
 	query := `SELECT ` + qsoSelectCols + `
-		FROM qsos WHERE qso_date >= ? ORDER BY qso_date DESC, time_on DESC, id DESC LIMIT ?`
+		FROM qsos WHERE qso_date >= ? ORDER BY ` + qsoNewestFirst + ` LIMIT ?`
 	return listQSOsByQuery(db, query, date, limit)
 }
 
@@ -1186,14 +1274,7 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 	// used to erase the contact from the DXCC history. Unindex after the
 	// update so edge recomputation sees the new values.
 	if oldErr == nil {
-		if err := indexQSO(tx, oldQSO, -1); err != nil {
-			return err
-		}
-		newQSO, lerr := loadQSOForIndex(tx, q.ID)
-		if lerr != nil {
-			return fmt.Errorf("reload qso for worked index: %w", lerr)
-		}
-		if err := indexQSO(tx, newQSO, 1); err != nil {
+		if err := reindexQSO(tx, q.ID, oldQSO); err != nil {
 			return err
 		}
 	}
@@ -1239,14 +1320,7 @@ func SaveQSO(db *sql.DB, q *qso.QSO) (synced bool, rev int64, err error) {
 	// what keeps the index honest, because the UPDATE preserves columns the
 	// caller left empty and indexing q would silently drop them.
 	if oldErr == nil {
-		if err := indexQSO(tx, oldQSO, -1); err != nil {
-			return false, 0, err
-		}
-		newQSO, lerr := loadQSOForIndex(tx, q.ID)
-		if lerr != nil {
-			return false, 0, fmt.Errorf("reload qso for worked index: %w", lerr)
-		}
-		if err := indexQSO(tx, newQSO, 1); err != nil {
+		if err := reindexQSO(tx, q.ID, oldQSO); err != nil {
 			return false, 0, err
 		}
 	}
@@ -1453,14 +1527,7 @@ func EnrichQSO(db *sql.DB, qsoID int64, e EnrichmentData) (EnrichmentSync, error
 	}
 
 	if oldErr == nil {
-		if err := indexQSO(tx, oldQSO, -1); err != nil {
-			return res, err
-		}
-		newQSO, lerr := loadQSOForIndex(tx, qsoID)
-		if lerr != nil {
-			return res, fmt.Errorf("reload qso for worked index: %w", lerr)
-		}
-		if err := indexQSO(tx, newQSO, 1); err != nil {
+		if err := reindexQSO(tx, qsoID, oldQSO); err != nil {
 			return res, err
 		}
 	}
@@ -1475,10 +1542,32 @@ func EnrichQSO(db *sql.DB, qsoID int64, e EnrichmentData) (EnrichmentSync, error
 // is updated in the same transaction, so a backfilled contact starts counting
 // in the DXCC history immediately instead of on the next full rebuild.
 // Returns how many rows were updated.
+//
+// Retries on SQLITE_BUSY like the other writers: the pass reads a row and then
+// writes it, and a QSO save that commits in between makes the write fail
+// outright instead of waiting — SQLite cannot upgrade a transaction that has
+// already read.
 func BackfillDXCC(db *sql.DB, byID map[int64]string) (int, error) {
 	if len(byID) == 0 {
 		return 0, nil
 	}
+	var updated int
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		updated, err = backfillDXCCOnce(db, byID)
+		if err == nil {
+			return updated, nil
+		}
+		if !strings.Contains(err.Error(), "database is locked") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return updated, err
+}
+
+// backfillDXCCOnce is one attempt at the whole batch.
+func backfillDXCCOnce(db *sql.DB, byID map[int64]string) (int, error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return 0, fmt.Errorf("begin dxcc backfill: %w", err)
@@ -1501,14 +1590,12 @@ func BackfillDXCC(db *sql.DB, byID map[int64]string) (int, error) {
 		if n, _ := res.RowsAffected(); n == 0 {
 			continue // row gained DXCC meanwhile — nothing to reindex
 		}
-		if err := indexQSO(tx, oldQSO, -1); err != nil {
-			return updated, err
+		after, err := loadQSOForIndex(tx, id)
+		if err != nil {
+			return updated, fmt.Errorf("dxcc backfill reload: %w", err)
 		}
-		newQSO, lerr := loadQSOForIndex(tx, id)
-		if lerr != nil {
-			return updated, fmt.Errorf("reload qso for worked index: %w", lerr)
-		}
-		if err := indexQSO(tx, newQSO, 1); err != nil {
+		// Only the DXCC aggregates can change — see backfillDXCCIndex.
+		if err := backfillDXCCIndex(tx, oldQSO, after); err != nil {
 			return updated, err
 		}
 		updated++

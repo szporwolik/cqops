@@ -14,17 +14,18 @@ jobs:
   validate-branding:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Shell syntax check
         run: |
           bash -n scripts/branding.sh
           bash -n scripts/validate-branding.sh
+          bash -n scripts/check-release-tag.sh
 
       - name: ShellCheck
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck --severity=warning scripts/branding.sh scripts/validate-branding.sh
+          shellcheck --severity=warning scripts/branding.sh scripts/validate-branding.sh scripts/check-release-tag.sh
 
       - name: Validate branding
         run: ./scripts/validate-branding.sh
@@ -39,8 +40,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: validate-branding
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with: { go-version: '1.26' }
 
       - name: Install nfpm
@@ -101,7 +102,7 @@ jobs:
       image: archlinux:latest
       options: --user root
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Create non-root build user (makepkg refuses root)
         run: |
@@ -199,9 +200,46 @@ jobs:
   validate-syso:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with: { go-version: '1.26' }
+
+      # The terminal guard has a Windows-only branch (CONIN$) that no Linux
+      # runner can execute; this job is the only place it gets a real console.
+      - name: Windows terminal guard tests
+        run: go test ./internal/cli/ -run 'TestWindows' -count=1 -v
+
+      # validate-nsis only runs on a tag/dispatch, so a broken installer script
+      # would otherwise reach the release pipeline unnoticed. Compiling it here
+      # costs a few seconds.
+      - name: Compile the NSIS installer
+        run: |
+          $V = (Get-Content VERSION)
+          go build -ldflags="-s -w -X github.com/szporwolik/cqops/internal/version.Version=$V" -o build/cqops-windows-amd64.exe ./cmd/cqops/
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          # Keep chocolatey's output: piping it to Out-Null turned an install
+          # failure into a confusing "not recognized as a name of a cmdlet" two
+          # lines later, with no clue what actually went wrong.
+          choco install nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw "choco install nsis failed with exit code $LASTEXITCODE" }
+          # Resolve the compiler instead of assuming one install layout.
+          $makensis = 'C:\Program Files (x86)\NSIS\makensis.exe'
+          if (-not (Test-Path $makensis)) { $makensis = (Get-Command makensis.exe -ErrorAction SilentlyContinue).Source }
+          if (-not $makensis) {
+            $hit = Get-ChildItem "$env:ProgramFiles(x86)\NSIS", "$env:ProgramFiles\NSIS", 'C:\ProgramData\chocolatey\bin' `
+              -Filter makensis.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hit) { $makensis = $hit.FullName }
+          }
+          if (-not $makensis -or -not (Test-Path $makensis)) { throw "makensis.exe not found after installing nsis" }
+          Write-Host "makensis=$makensis"
+          # Absolute paths: the script's own defaults are relative to the .nsi,
+          # which only works when the compiler happens to run from the repo root.
+          $root = (Get-Location).Path
+          Write-Host "root=$root"
+          & $makensis "/DVERSION=$V" "/DROOT=$root" "/DBIN_SRC=$root\build\cqops-windows-amd64.exe" installer\cqops.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed with exit code $LASTEXITCODE" }
+          if (-not (Test-Path "dist\cqops-setup.exe")) { throw "the installer was not produced" }
+          Write-Host "Installer built: $((Get-Item 'dist\cqops-setup.exe').Length) bytes"
 
       - name: Install go-winres
         run: go install github.com/tc-hib/go-winres@v0.3.3
@@ -227,8 +265,8 @@ jobs:
   test-race:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with: { go-version: '1.26' }
 
       - name: Install C compiler
@@ -242,8 +280,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with: { go-version: '1.26' }
 
       - name: Build Windows exe

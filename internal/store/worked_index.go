@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,7 +43,9 @@ import (
 // meaning of the aggregates changes (canonical mode mapping, grid precision,
 // what counts as confirmed, source classification). Every installation
 // rebuilds its index on the next start; no schema version bump needed.
-const workedIndexRulesVersion = "2"
+//
+// "3" added the maintained completeness counters, which a rebuild seeds.
+const workedIndexRulesVersion = "3"
 
 // Source provenance bits stored in worked_dxcc.source_mask.
 const (
@@ -214,50 +217,164 @@ func applyCountDelta(e sqlExecutor, table, keyCols, keyVals string, keyArgs []an
 // missing base call / grid / DXCC / band / mode simply skips the affected
 // aggregates.
 func indexQSO(e sqlExecutor, q *qso.QSO, delta int) error {
+	contrib := contributionOf(q)
 	d := indexDelta{
-		stamp: qsoStamp(q.QSODate, q.TimeOn),
+		stamp: contrib.stamp,
 		count: delta,
-		mask:  sourceMaskBit(q.Source),
+		mask:  contrib.source,
 	}
-	if q.Confirmed() {
+	if contrib.confirmed {
 		d.confirmed = delta
 	}
 
-	if bc := qso.DeriveBaseCall(q.Call); bc != "" {
-		if err := applyCountDelta(e, "worked_call", "base_call", "?", []any{bc}, d); err != nil {
+	if contrib.baseCall != "" {
+		if err := applyCountDelta(e, "worked_call", "base_call", "?", []any{contrib.baseCall}, d); err != nil {
 			return err
 		}
 	}
 
-	if len(q.GridSquare) >= 4 {
-		grid4 := strings.ToUpper(q.GridSquare[:4])
-		if err := applyCountDelta(e, "worked_grid", "grid4", "?", []any{grid4}, d); err != nil {
+	if contrib.grid4 != "" {
+		if err := applyCountDelta(e, "worked_grid", "grid4", "?", []any{contrib.grid4}, d); err != nil {
 			return err
 		}
 	}
 
-	dxcc := strings.TrimSpace(q.DXCC)
-	if dxcc == "" {
+	if err := addDXCCLevels(e, contrib, d); err != nil {
+		return err
+	}
+
+	// The completeness counters follow the same delta, so the panel never has
+	// to scan the log to answer "is this log complete?" for a new callsign.
+	return applyCoverageDelta(e, contrib, delta)
+}
+
+// addDXCCLevels applies one delta to the four aggregation levels a contact
+// contributes to: DXCC, DXCC + band, DXCC + canonical mode, DXCC + band + mode.
+// A contact without a DXCC entity contributes to none of them.
+func addDXCCLevels(e sqlExecutor, contrib indexContribution, d indexDelta) error {
+	if contrib.dxcc == "" {
 		return nil
 	}
-	mode := canonicalMode(q.Mode, q.Submode)
 	levels := [][2]string{{"", ""}}
-	if q.Band != "" {
-		levels = append(levels, [2]string{q.Band, ""})
+	if contrib.band != "" {
+		levels = append(levels, [2]string{contrib.band, ""})
 	}
-	if mode != "" {
-		levels = append(levels, [2]string{"", mode})
+	if contrib.mode != "" {
+		levels = append(levels, [2]string{"", contrib.mode})
 	}
-	if q.Band != "" && mode != "" {
-		levels = append(levels, [2]string{q.Band, mode})
+	if contrib.band != "" && contrib.mode != "" {
+		levels = append(levels, [2]string{contrib.band, contrib.mode})
 	}
 	for _, lv := range levels {
-		args := []any{dxcc, lv[0], lv[1]}
+		args := []any{contrib.dxcc, lv[0], lv[1]}
 		if err := applyCountDelta(e, "worked_dxcc", "dxcc, band, mode", "?, ?, ?", args, d); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// indexContribution is everything a QSO adds to the index: the aggregate keys
+// it joins, the timestamp that feeds first/last, its confirmation and its
+// source. Two rows with an equal contribution add and remove exactly the same
+// deltas, so an edit that leaves it alone — a comment, a name, a QTH, a
+// no-op enrichment — does not have to touch the aggregates at all.
+type indexContribution struct {
+	baseCall  string
+	grid4     string
+	dxcc      string
+	band      string
+	mode      string
+	stamp     string
+	confirmed bool
+	source    int
+
+	// Completeness inputs, taken from the raw columns the coverage counters
+	// count. They are part of the contribution so that skipping an index
+	// update can never leave those counters behind.
+	noDXCC bool
+	noBand bool
+	noMode bool
+}
+
+// contributionOf mirrors indexQSO field for field: if these ever disagree, an
+// edit is either indexed when it should not be, or skipped when it must not.
+func contributionOf(q *qso.QSO) indexContribution {
+	c := indexContribution{
+		baseCall:  qso.DeriveBaseCall(q.Call),
+		dxcc:      strings.TrimSpace(q.DXCC),
+		band:      q.Band,
+		mode:      canonicalMode(q.Mode, q.Submode),
+		stamp:     qsoStamp(q.QSODate, q.TimeOn),
+		confirmed: q.Confirmed(),
+		source:    sourceMaskBit(q.Source),
+		noDXCC:    q.DXCC == "",
+		noBand:    q.Band == "",
+		noMode:    q.Mode == "",
+	}
+	if len(q.GridSquare) >= 4 {
+		c.grid4 = strings.ToUpper(q.GridSquare[:4])
+	}
+	return c
+}
+
+// reindexQSO applies one edit's index delta: the stored row's previous
+// contribution stops counting, its new one starts. Callers run it AFTER the row
+// update, because the removal path re-derives edge timestamps and source masks
+// from the whole qsos table and must see the new values.
+//
+// When the contribution did not change nothing is written. The -1/+1 pair would
+// cancel out, but the removal half re-derives first/last/source_mask for every
+// aggregate the contact belongs to — across a whole log that made a
+// comment-only save the most expensive write there is (hundreds of ms at 100k
+// QSOs, and the enrichment loop calls this from the UI path).
+func reindexQSO(e sqlExecutor, id int64, before *qso.QSO) error {
+	after, err := loadQSOForIndex(e, id)
+	if err != nil {
+		return fmt.Errorf("reload qso for worked index: %w", err)
+	}
+	if contributionOf(before) == contributionOf(after) {
+		return nil
+	}
+	if err := indexQSO(e, before, -1); err != nil {
+		return err
+	}
+	return indexQSO(e, after, 1)
+}
+
+// backfillDXCCIndex applies the index delta for a contact whose DXCC entity was
+// just resolved by the backfill — and nothing else.
+//
+// reindexQSO would also work here, but it removes and re-adds the whole
+// contribution: the base call and the four-character grid, which the backfill
+// never touches. The removal half re-derives first/last for both aggregates
+// from the entire table, and the grid one cannot use an index — UPPER(SUBSTR(
+// gridsquare,1,4)) is a function on the column — so it walks the log once per
+// backfilled contact. That is 395 ms for a 50-row batch in a 10k log and about
+// 6 s in a 100k one, inside a write transaction every other writer has to wait
+// for.
+//
+// Only the DXCC levels and the "missing DXCC" coverage counter can change, so
+// only those move.
+func backfillDXCCIndex(e sqlExecutor, before, after *qso.QSO) error {
+	prev := contributionOf(before)
+	next := contributionOf(after)
+	if prev.dxcc != "" || next.dxcc == "" {
+		return nil // already had an entity, or still none — nothing to move
+	}
+	// Net effect on the counters: noDXCC falls by one, the band/mode flags
+	// cancel out.
+	if err := applyCoverageDelta(e, prev, -1); err != nil {
+		return err
+	}
+	if err := applyCoverageDelta(e, next, 1); err != nil {
+		return err
+	}
+	d := indexDelta{stamp: next.stamp, count: 1, mask: next.source}
+	if next.confirmed {
+		d.confirmed = 1
+	}
+	return addDXCCLevels(e, next, d)
 }
 
 // RebuildWorkedIndex rebuilds the entire worked index from qsos in one
@@ -324,7 +441,13 @@ func rebuildWorkedIndex(e sqlExecutor) error {
 		return fmt.Errorf("worked index rebuild dxcc: %w", err)
 	}
 
-	return nil
+	// Seed the completeness counters from the same rebuild: Coverage answers
+	// "is this log complete?" from them instead of scanning qsos.
+	coverage, err := scanCoverage(e)
+	if err != nil {
+		return err
+	}
+	return writeCoverageCounters(e, coverage)
 }
 
 // qsoIndexColumns is the SELECT list of the qsos columns index maintenance
@@ -455,11 +578,34 @@ func (c LogCoverage) Complete() bool {
 	return c.DXCCComplete() && c.MissingBand == 0 && c.MissingMode == 0
 }
 
-// Coverage inspects the local log (and the stored remote-sync marker) to
-// describe how much confidence a "not worked" answer deserves.
+// Coverage returns the completeness of the local log (plus the stored
+// remote-sync marker), which decides how much confidence a "not worked" answer
+// deserves.
+//
+// The numbers are read from the counters kept in worked_index_meta, not by
+// scanning qsos: this runs for every callsign the operator types, and the
+// answer describes the whole logbook rather than the partner, so the scan was
+// pure waste (41 ms at 100k contacts, on the panel's async lookup). When the
+// counters are absent — an installation that has not rebuilt its index since
+// they were introduced — the scan is used instead, so the answer stays correct.
 func Coverage(db *sql.DB) (LogCoverage, error) {
+	c, ok, err := readCoverageCounters(db)
+	if err != nil {
+		return c, err
+	}
+	if !ok {
+		if c, err = scanCoverage(db); err != nil {
+			return c, err
+		}
+		c.LastRemoteSync = metaValue(db, metaKeyLastRemoteSync)
+	}
+	return c, nil
+}
+
+// scanCoverage counts the log the slow way: one pass over qsos.
+func scanCoverage(e sqlExecutor) (LogCoverage, error) {
 	var c LogCoverage
-	err := db.QueryRow(
+	err := e.QueryRow(
 		`SELECT COUNT(*),
 			COALESCE(SUM(CASE WHEN COALESCE(dxcc,'') = '' THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN COALESCE(band,'') = '' THEN 1 ELSE 0 END), 0),
@@ -469,8 +615,111 @@ func Coverage(db *sql.DB) (LogCoverage, error) {
 	if err != nil {
 		return c, fmt.Errorf("log coverage: %w", err)
 	}
-	c.LastRemoteSync = metaValue(db, metaKeyLastRemoteSync)
 	return c, nil
+}
+
+// readCoverageCounters loads the maintained numbers and the remote-sync marker
+// in one query. ok is false when any counter is missing, which means "fall back
+// to the scan".
+func readCoverageCounters(db *sql.DB) (LogCoverage, bool, error) {
+	var c LogCoverage
+	rows, err := db.Query(
+		`SELECT key, value FROM worked_index_meta WHERE key IN (?, ?, ?, ?, ?)`,
+		metaKeyCoverageQSOs, metaKeyCoverageNoDXCC, metaKeyCoverageNoBand, metaKeyCoverageNoMode,
+		metaKeyLastRemoteSync)
+	if err != nil {
+		return c, false, nil // table missing on a database mid-migration
+	}
+	defer rows.Close()
+	seen := 0
+	for rows.Next() {
+		var key, value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return c, false, fmt.Errorf("read coverage counters: %w", err)
+		}
+		n, _ := strconv.Atoi(value)
+		switch key {
+		case metaKeyCoverageQSOs:
+			c.QSOCount, seen = n, seen|1
+		case metaKeyCoverageNoDXCC:
+			c.UnresolvedDXCC, seen = n, seen|2
+		case metaKeyCoverageNoBand:
+			c.MissingBand, seen = n, seen|4
+		case metaKeyCoverageNoMode:
+			c.MissingMode, seen = n, seen|8
+		case metaKeyLastRemoteSync:
+			c.LastRemoteSync = value
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return c, false, fmt.Errorf("read coverage counters: %w", err)
+	}
+	return c, seen == 15, nil
+}
+
+// writeCoverageCounters stores the absolute numbers (rebuild path).
+func writeCoverageCounters(e sqlExecutor, c LogCoverage) error {
+	for _, kv := range []struct {
+		key   string
+		value int
+	}{
+		{metaKeyCoverageQSOs, c.QSOCount},
+		{metaKeyCoverageNoDXCC, c.UnresolvedDXCC},
+		{metaKeyCoverageNoBand, c.MissingBand},
+		{metaKeyCoverageNoMode, c.MissingMode},
+	} {
+		if _, err := e.Exec(
+			`INSERT INTO worked_index_meta (key, value) VALUES (?, ?)
+			 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+			kv.key, strconv.Itoa(kv.value)); err != nil {
+			return fmt.Errorf("write coverage counter %s: %w", kv.key, err)
+		}
+	}
+	return nil
+}
+
+// applyCoverageDelta keeps the counters in step with one QSO insert (+1) or
+// removal (-1). A contact that carries DXCC, band and mode only moves the
+// total, so the usual write is a single UPDATE.
+//
+// The statements update existing rows only: on a database whose counters have
+// not been seeded yet nothing happens and Coverage scans instead, so the
+// numbers can never start from a wrong base.
+func applyCoverageDelta(e sqlExecutor, d indexContribution, delta int) error {
+	deltas := make([]struct {
+		key string
+		by  int
+	}, 0, 4)
+	deltas = append(deltas, struct {
+		key string
+		by  int
+	}{metaKeyCoverageQSOs, delta})
+	if d.noDXCC {
+		deltas = append(deltas, struct {
+			key string
+			by  int
+		}{metaKeyCoverageNoDXCC, delta})
+	}
+	if d.noBand {
+		deltas = append(deltas, struct {
+			key string
+			by  int
+		}{metaKeyCoverageNoBand, delta})
+	}
+	if d.noMode {
+		deltas = append(deltas, struct {
+			key string
+			by  int
+		}{metaKeyCoverageNoMode, delta})
+	}
+	for _, item := range deltas {
+		if _, err := e.Exec(
+			`UPDATE worked_index_meta SET value = CAST(MAX(0, CAST(value AS INTEGER) + ?) AS TEXT)
+			 WHERE key = ?`, item.by, item.key); err != nil {
+			return fmt.Errorf("update coverage counter %s: %w", item.key, err)
+		}
+	}
+	return nil
 }
 
 // WorkedState is the panel-facing verdict for one worked-status row.
@@ -500,6 +749,14 @@ func Verdict(worked, complete bool) WorkedState {
 const (
 	metaKeyRulesVersion   = "rules_version"
 	metaKeyLastRemoteSync = "last_remote_sync"
+
+	// Completeness counters for Coverage: the whole-log numbers behind every
+	// NEW/UNKNOWN verdict. Maintained by indexQSO (same delta as the worked
+	// aggregates) and seeded by RebuildWorkedIndex.
+	metaKeyCoverageQSOs   = "coverage_qsos"
+	metaKeyCoverageNoDXCC = "coverage_no_dxcc"
+	metaKeyCoverageNoBand = "coverage_no_band"
+	metaKeyCoverageNoMode = "coverage_no_mode"
 )
 
 // metaValue reads one worked_index_meta entry; a missing table/key is "".

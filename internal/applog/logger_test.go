@@ -55,6 +55,44 @@ func TestEntries_CopySafety(t *testing.T) {
 	}
 }
 
+// TestRevision_AdvancesWhenTheRingIsFull: the number of stored entries stops
+// growing at maxStored, which is exactly why a cache cannot key on it — the
+// revision keeps moving.
+func TestRevision_AdvancesWhenTheRingIsFull(t *testing.T) {
+	mu.Lock()
+	entries = nil
+	mu.Unlock()
+
+	before := Revision()
+	for i := 0; i < maxStored; i++ {
+		Append("INFO", "fill", "")
+	}
+	full := Revision()
+	if full-before != maxStored {
+		t.Fatalf("revision advanced by %d over %d appends", full-before, maxStored)
+	}
+	if got := len(Entries()); got != maxStored {
+		t.Fatalf("ring holds %d entries, want %d", got, maxStored)
+	}
+
+	// Beyond capacity the count stands still while the revision keeps counting.
+	for i := 0; i < 10; i++ {
+		Append("INFO", "overflow", "")
+	}
+	if got := len(Entries()); got != maxStored {
+		t.Fatalf("ring grew past its limit: %d entries", got)
+	}
+	if after := Revision(); after-full != 10 {
+		t.Errorf("revision advanced by %d over 10 appends into a full ring, want 10", after-full)
+	}
+
+	// The snapshot reports the revision it describes.
+	_, rev := EntriesWithRevision()
+	if rev != Revision() {
+		t.Errorf("EntriesWithRevision reported %d, Revision() is %d", rev, Revision())
+	}
+}
+
 // TestOpenLogFile_OwnerOnly verifies log files are created readable by the
 // owner only, regardless of the process umask.
 func TestOpenLogFile_OwnerOnly(t *testing.T) {

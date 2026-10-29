@@ -3,13 +3,11 @@ package tui
 import (
 	"database/sql"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/szporwolik/cqops/internal/applog"
-	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
 
@@ -36,6 +34,17 @@ type contestStats struct {
 	cachedSig   string
 	cachedPanel string
 
+	// History cache. The whole contest is read once per change, not once per
+	// tick: times holds the on-air timestamps newest-first (24 bytes each, no
+	// QSO structs), timesRev is the model revision it was read at, and the
+	// clock-dependent numbers (last 60 minutes, current hour, the minute
+	// chart) are recomputed from it on every tick without touching the
+	// database.
+	times     []time.Time
+	timesRev  uint64
+	fetchedAt time.Time
+	loaded    bool
+
 	// now is the clock seam for tests (nil means time.Now). The window
 	// counters compare against the wall clock, so a test that pins the QSO
 	// times must pin the clock too — otherwise it flips whenever the run
@@ -43,24 +52,60 @@ type contestStats struct {
 	now func() time.Time
 }
 
-func (cs *contestStats) computeIfStale(db *sql.DB, contestID string, contestName string) bool {
+const (
+	// contestStatsRefresh is how often the clock-dependent numbers are
+	// refreshed: the last-60-minutes window, the current hour and the chart
+	// all slide with the wall clock even when the log does not change.
+	contestStatsRefresh = 5 * time.Second
+	// contestStatsMaxAge bounds how long the cached history may be trusted
+	// when nothing reported a change. Every UI write path bumps the model's
+	// qsoRev, which refreshes the panel immediately; this only covers a write
+	// that bypassed the model (a remote refresh merging a corrected time, an
+	// external tool editing the database) and does it without walking the
+	// contest every five seconds.
+	contestStatsMaxAge = 60 * time.Second
+)
+
+// computeIfStale refreshes the panel numbers if the 5-second window has passed.
+// rev is the model's QSO revision: the expensive part — reading the contest's
+// whole history and deriving session, peaks and averages — runs only when it
+// changed (or the cache expired), never once per tick.
+func (cs *contestStats) computeIfStale(db *sql.DB, contestID string, contestName string, rev uint64) bool {
 	now := time.Now().UTC()
 	if cs.now != nil {
 		now = cs.now().UTC()
 	}
-	if cs.contestID == contestID && now.Sub(cs.computedAt) < 5*time.Second {
+	if cs.contestID == contestID && now.Sub(cs.computedAt) < contestStatsRefresh {
 		return false
 	}
+	switching := cs.contestID != contestID
 	cs.contestID = contestID
 	cs.Name = contestName
 	cs.computedAt = now
 	cs.cachedPanel = ""
+
+	if switching || !cs.loaded || rev != cs.timesRev || now.Sub(cs.fetchedAt) >= contestStatsMaxAge {
+		cs.reload(db, contestID, rev, now)
+	}
+	// Cheap: a prefix of the cached slice, nothing older than an hour can
+	// enter these numbers.
+	cs.computeWindows(now)
+	return true
+}
+
+// reload reads the contest history and re-derives every value that depends on
+// it alone. Clock-dependent numbers are left to computeWindows.
+func (cs *contestStats) reload(db *sql.DB, contestID string, rev uint64, now time.Time) {
+	cs.loaded = true
+	cs.fetchedAt = now
+	cs.timesRev = rev
 
 	// Reset every derived value before recomputing. The struct is reused
 	// across ticks and contest switches, and the window counters used to be
 	// incremented in place: "Count 60m" and "hr" grew by the current window
 	// on every 5-second refresh (4 QSOs logged for 9 minutes read as 354),
 	// and an empty contest kept the previous contest's numbers.
+	cs.times = nil
 	cs.TotalQSOs = 0
 	cs.ThisHour = 0
 	cs.Last60Min = 0
@@ -76,38 +121,20 @@ func (cs *contestStats) computeIfStale(db *sql.DB, contestID string, contestName
 	cs.FirstQSO = time.Time{}
 	cs.MinuteBuckets = nil
 
-	// Every row of the contest, timings only — no 1000-row cap, so the session
-	// span, peaks and windows cover the whole contest.
-	stamps, err := store.ListContestQSOStamps(db, contestID)
-	if err != nil || len(stamps) == 0 {
+	times, err := store.ListContestQSOStamps(db, contestID)
+	if err != nil || len(times) == 0 {
 		applog.Debug("contest stats: no QSOs", "err", err)
-		return true
+		return
 	}
+	cs.times = times
 
 	// Rates are measured on the QSO's on-air time (qso_date + time_on), not on
 	// created_at: after an ADIF import created_at is the import time, which
 	// made "last 60m" report the whole import as a burst.
-	times := make([]time.Time, 0, len(stamps))
-	for i := range stamps {
-		times = append(times, qsoTimeOf(&stamps[i]))
-	}
-	sort.Slice(times, func(i, j int) bool { return times[i].After(times[j]) })
-
 	cs.TotalQSOs = len(times)
 	cs.LastQSO = times[0]
 	cs.FirstQSO = times[len(times)-1]
 	cs.Session = cs.LastQSO.Sub(cs.FirstQSO)
-
-	hourStart := now.Truncate(time.Hour)
-	cutoff60 := now.Add(-60 * time.Minute)
-	for _, t := range times {
-		if t.After(hourStart) {
-			cs.ThisHour++
-		}
-		if t.After(cutoff60) {
-			cs.Last60Min++
-		}
-	}
 
 	cs.Rate10 = cs.qsoRate(times, 10)
 	cs.Rate100 = cs.qsoRate(times, 100)
@@ -127,31 +154,43 @@ func (cs *contestStats) computeIfStale(db *sql.DB, contestID string, contestName
 	if base.Seconds() > 0 {
 		cs.AvgSession = int(float64(len(times)) / base.Hours())
 	}
-
-	cs.MinuteBuckets = bucketQSOsByMinute(times, 60, now)
-	return true
 }
 
-// qsoTimeOf returns the on-air time of a QSO (qso_date + time_on, both UTC).
-// Falls back to created_at when the record carries no usable time, so a
-// hand-built row still sorts sanely.
-func qsoTimeOf(q *qso.QSO) time.Time {
-	date := qso.StripNonDigits(q.QSODate)
-	if len(date) == 8 {
-		tm := qso.StripNonDigits(q.TimeOn)
-		if tm == "" {
-			tm = "000000"
+// computeWindows recalculates the numbers that slide with the clock. times is
+// newest-first, so the loops stop at the first contact older than the window.
+func (cs *contestStats) computeWindows(now time.Time) {
+	hourStart := now.Truncate(time.Hour)
+	cutoff60 := now.Add(-60 * time.Minute)
+	cs.ThisHour = 0
+	cs.Last60Min = 0
+	for _, t := range cs.times {
+		if !t.After(cutoff60) {
+			break
 		}
-		if len(tm) < 6 {
-			tm += strings.Repeat("0", 6-len(tm)) // HHMM is a valid ADIF time_on
-		}
-		if len(tm) == 6 {
-			if t, err := time.ParseInLocation("20060102150405", date+tm, time.UTC); err == nil {
-				return t
-			}
+		cs.Last60Min++
+		if t.After(hourStart) {
+			cs.ThisHour++
 		}
 	}
-	return q.CreatedAt.UTC()
+	cs.MinuteBuckets = nil
+	if len(cs.times) == 0 {
+		return
+	}
+	// The chart is drawn whenever the contest has contacts, even when none of
+	// them is recent enough to land in a bar: an empty hour is information.
+	const minutes = 60
+	buckets := make([]float64, minutes)
+	bucketStart := now.Add(-time.Duration(minutes) * time.Minute)
+	for _, t := range cs.times {
+		if t.Before(bucketStart) {
+			break
+		}
+		idx := int(t.Sub(bucketStart).Minutes())
+		if idx >= 0 && idx < minutes {
+			buckets[idx]++
+		}
+	}
+	cs.MinuteBuckets = buckets
 }
 
 func (cs *contestStats) qsoRate(times []time.Time, n int) int {
@@ -171,27 +210,29 @@ func (cs *contestStats) qsoRate(times []time.Time, n int) int {
 	return int(float64(count-1) / span.Hours())
 }
 
+// bestRate returns the highest hourly rate seen in any window-long stretch of
+// contacts. times is newest-first, so the window ending at each contact grows
+// monotonically: one sweep with a single moving end index instead of walking
+// every contact's window again (that nested scan was quadratic on a dense
+// contest and dominated the panel's cost).
 func (cs *contestStats) bestRate(times []time.Time, window time.Duration) int {
-	if len(times) < 2 {
+	if len(times) < 2 || window <= 0 {
 		return 0
 	}
-	best := 0
-	for end := 0; end < len(times); end++ {
-		startTime := times[end].Add(-window)
-		count := 0
-		for i := end; i < len(times); i++ {
-			if times[i].After(startTime) {
-				count++
-			} else {
-				break
-			}
+	best, end := 0, 0
+	for start := 0; start < len(times); start++ {
+		if end < start+1 {
+			end = start + 1
 		}
-		rate := int(float64(count) / window.Hours())
-		if rate > best {
-			best = rate
+		limit := times[start].Add(-window)
+		for end < len(times) && times[end].After(limit) {
+			end++
+		}
+		if n := end - start; n > best {
+			best = n
 		}
 	}
-	return best
+	return int(float64(best) / window.Hours())
 }
 
 func (cs *contestStats) computeOnAir(times []time.Time) time.Duration {
@@ -223,21 +264,6 @@ func formatDurationShort(d time.Duration) string {
 	totalH := int(d.Hours())
 	m := totalMin % 60
 	return fmt.Sprintf("%d:%02d", totalH, m)
-}
-
-func bucketQSOsByMinute(times []time.Time, numBuckets int, now time.Time) []float64 {
-	buckets := make([]float64, numBuckets)
-	bucketStart := now.Add(-time.Duration(numBuckets) * time.Minute)
-	for _, t := range times {
-		if t.Before(bucketStart) {
-			continue
-		}
-		idx := int(t.Sub(bucketStart).Minutes())
-		if idx >= 0 && idx < numBuckets {
-			buckets[idx]++
-		}
-	}
-	return buckets
 }
 
 func aggregateBuckets(buckets []float64, target int) []float64 {
@@ -272,7 +298,7 @@ func (m *Model) renderContestPanel() string {
 		return ""
 	}
 
-	m.contest.computeIfStale(m.App.DB, contestID, ct.Name)
+	m.contest.computeIfStale(m.App.DB, contestID, ct.Name, m.qsoRev)
 
 	// Cache key — avoids rebuilding the panel string at 60fps when
 	// the underlying data only changes every 5 seconds.

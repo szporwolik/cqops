@@ -453,158 +453,139 @@ func mergeRemoteQSO(local *qso.QSO, d *wavelog.QSOData) *qso.QSO {
 	if band := strings.ToUpper(strings.TrimSpace(d.Band)); band != "" {
 		merged.Band = band
 	}
-	mode, submode := qso.NormalizeMode(d.Mode, d.Submode)
-	merged.Mode = mode
-	merged.Submode = submode
+	// A remote value is applied only when it carries something. Wavelog
+	// answers empty/null for every field CQOps did not upload, and anything
+	// uploaded before the v2 create carried the power, the references and the
+	// zones comes back blank — reading that as "the operator cleared it" wiped
+	// local data on the first edit (the contest exchange loss reported from a
+	// real log was exactly this). The local log is the operator's data, so it
+	// wins over an empty remote and the next save pushes it back to the server.
+	// Clearing a field still works: the operator clears it locally and the
+	// PATCH sends the empty value.
+	if strings.TrimSpace(d.Mode) != "" {
+		mode, submode := qso.NormalizeMode(d.Mode, d.Submode)
+		// Wavelog stores the mode but not always the sideband: a contact logged
+		// as SSB/USB comes back as mode=SSB with submode=null. When the mode
+		// itself did not change, the local sideband is the operator's data and
+		// has to survive — clearing it here also loses it for good, because the
+		// store re-derives an SSB sideband from the frequency on write (USB at
+		// 7.1 MHz came back as LSB). A remote submode always wins, and a real
+		// mode change drops the old sideband instead of carrying it across.
+		if submode == "" && strings.EqualFold(mode, strings.TrimSpace(local.Mode)) {
+			submode = local.Submode
+		}
+		merged.Mode, merged.Submode = mode, submode
+	}
 	if len(d.QSODate) >= 10 {
 		merged.QSODate = strings.ReplaceAll(d.QSODate[:10], "-", "") // ADIF YYYYMMDD
 	}
 	if len(d.QSODate) >= 19 {
 		merged.TimeOn = strings.ReplaceAll(d.QSODate[11:19], ":", "") // HHMMSS
 	}
-	merged.RSTSent = d.RSTSent
-	merged.RSTRcvd = d.RSTRcvd
-	merged.GridSquare = strings.TrimSpace(d.Gridsquare)
-	merged.Name = d.Name
-	merged.QTH = d.QTH
-	merged.Comment = d.Comment
-	merged.Notes = d.Notes
-	merged.TXPower = d.TXPower
-	merged.SOTARef = d.SOTARef
-	merged.POTARef = d.POTARef
-	merged.WWFFRef = d.WWFFRef
-	merged.IOTA = d.IOTA
-	merged.SIG = d.SIG
-	merged.SIGInfo = d.SIGInfo
-	// Zones and frequencies need presence awareness: a remote CLEAR (JSON
-	// null) must apply — a guarded "only when positive/nonempty" read would
-	// keep the stale local value, which the next unrelated save would send
-	// back and silently undo the remote clear. An ABSENT field leaves the
-	// local value untouched. Literal-constructed QSOData (present == nil,
-	// e.g. tests) keeps the value-based fallback.
-	if d.HasPresence() {
-		if d.Has("cqz") {
-			merged.CQZone = ""
-			if d.CQZ > 0 {
-				merged.CQZone = strconv.Itoa(d.CQZ)
-			}
+	setIf := func(remote string, dst *string) {
+		if strings.TrimSpace(remote) != "" {
+			*dst = remote
 		}
-		if d.Has("ituz") {
-			merged.ITUZone = ""
-			if d.ITUZ > 0 {
-				merged.ITUZone = strconv.Itoa(d.ITUZ)
-			}
+	}
+	setIf(d.RSTSent, &merged.RSTSent)
+	setIf(d.RSTRcvd, &merged.RSTRcvd)
+	if g := strings.TrimSpace(d.Gridsquare); g != "" {
+		merged.GridSquare = g
+	}
+	setIf(d.Name, &merged.Name)
+	setIf(d.QTH, &merged.QTH)
+	setIf(d.Comment, &merged.Comment)
+	setIf(d.Notes, &merged.Notes)
+	setIf(d.TXPower, &merged.TXPower)
+	setIf(d.SOTARef, &merged.SOTARef)
+	setIf(d.POTARef, &merged.POTARef)
+	setIf(d.WWFFRef, &merged.WWFFRef)
+	setIf(d.IOTA, &merged.IOTA)
+	setIf(d.SIG, &merged.SIG)
+	setIf(d.SIGInfo, &merged.SIGInfo)
+	if d.CQZ > 0 {
+		merged.CQZone = strconv.Itoa(d.CQZ)
+	}
+	if d.ITUZ > 0 {
+		merged.ITUZone = strconv.Itoa(d.ITUZ)
+	}
+	if d.Freq != "" {
+		if hz, err := strconv.ParseFloat(d.Freq, 64); err == nil {
+			merged.Freq = hz / 1e6
 		}
-		if d.Has("freq") {
-			merged.Freq = 0
-			if d.Freq != "" {
-				if hz, err := strconv.ParseFloat(d.Freq, 64); err == nil {
-					merged.Freq = hz / 1e6
-				}
-			}
-		}
-		if d.Has("freq_rx") {
-			merged.FreqRx = 0
-			if d.FreqRx != "" {
-				if hz, err := strconv.ParseFloat(d.FreqRx, 64); err == nil {
-					merged.FreqRx = hz / 1e6
-				}
-			}
-		}
-	} else {
-		if d.CQZ > 0 {
-			merged.CQZone = strconv.Itoa(d.CQZ)
-		}
-		if d.ITUZ > 0 {
-			merged.ITUZone = strconv.Itoa(d.ITUZ)
-		}
-		if d.Freq != "" {
-			if hz, err := strconv.ParseFloat(d.Freq, 64); err == nil {
-				merged.Freq = hz / 1e6
-			}
-		}
-		if d.FreqRx != "" {
-			if hz, err := strconv.ParseFloat(d.FreqRx, 64); err == nil {
-				merged.FreqRx = hz / 1e6
-			}
+	}
+	if d.FreqRx != "" {
+		if hz, err := strconv.ParseFloat(d.FreqRx, 64); err == nil {
+			merged.FreqRx = hz / 1e6
 		}
 	}
 
-	// Contest exchange (stx/srx/stx_string/srx_string). Presence-aware for the
-	// same reason as the zones above: an explicit remote clear must apply, an
-	// absent field must not.
+	// Contest exchange (stx/srx/stx_string/srx_string).
+	//
+	// A side is taken from the remote copy only when the remote actually
+	// carries an exchange: a serial above zero or a non-empty exchange string.
+	// An empty remote exchange is NOT proof that the operator cleared it —
+	// Wavelog answers `stx: null` with an empty `stx_string` for every contact
+	// whose contest fields never reached it (anything uploaded before the v2
+	// payload carried them), and treating that as a clear wiped the local
+	// serials and exchange text on the first edit after an upgrade. The local
+	// log is the operator's data, so it wins over an empty remote and the next
+	// save pushes it back to the server.
 	var stxSet, stxStrSet, srxSet, srxStrSet bool
 	if d.HasPresence() {
-		if stxSet = d.Has("stx"); stxSet {
-			merged.STX = 0
-			if d.STX != nil && *d.STX > 0 {
-				merged.STX = *d.STX
-			}
-		}
-		if srxSet = d.Has("srx"); srxSet {
-			merged.SRX = 0
-			if d.SRX != nil && *d.SRX > 0 {
-				merged.SRX = *d.SRX
-			}
-		}
-		if stxStrSet = d.Has("stx_string"); stxStrSet {
-			merged.STXString = strings.TrimSpace(d.STXString)
-		}
-		if srxStrSet = d.Has("srx_string"); srxStrSet {
-			merged.SRXString = strings.TrimSpace(d.SRXString)
-		}
+		stxSet, stxStrSet = d.Has("stx"), d.Has("stx_string")
+		srxSet, srxStrSet = d.Has("srx"), d.Has("srx_string")
 	} else {
-		if d.STX != nil {
-			merged.STX, stxSet = max(*d.STX, 0), true
-		}
-		if d.SRX != nil {
-			merged.SRX, srxSet = max(*d.SRX, 0), true
-		}
-		if d.STXString != "" {
-			merged.STXString, stxStrSet = strings.TrimSpace(d.STXString), true
-		}
-		if d.SRXString != "" {
-			merged.SRXString, srxStrSet = strings.TrimSpace(d.SRXString), true
-		}
+		// Literal-constructed values (tests, callers inside the package) carry
+		// no presence map: a value above zero / a non-empty string is what
+		// counts as information.
+		stxSet, stxStrSet = d.STX != nil && *d.STX > 0, strings.TrimSpace(d.STXString) != ""
+		srxSet, srxStrSet = d.SRX != nil && *d.SRX > 0, strings.TrimSpace(d.SRXString) != ""
 	}
-	// Keep the editable exchange text in step with the four fields: the editor
-	// re-derives them from ExchSent/ExchRcvd on save, so a stale text would
-	// resurrect the old serials on the next unrelated edit.
-	if text, ok := exchangeText(merged.RSTSent, stxStrSet, merged.STXString, stxSet, merged.STX); ok {
-		merged.ExchSent = text
+	if serial, exch, ok := remoteExchange(d.STX, d.STXString, stxSet, stxStrSet); ok {
+		merged.STX, merged.STXString = serial, exch
+		merged.ExchSent = exchangeText(merged.RSTSent, exch, serial)
 	}
-	if text, ok := exchangeText(merged.RSTRcvd, srxStrSet, merged.SRXString, srxSet, merged.SRX); ok {
-		merged.ExchRcvd = text
+	if serial, exch, ok := remoteExchange(d.SRX, d.SRXString, srxSet, srxStrSet); ok {
+		merged.SRX, merged.SRXString = serial, exch
+		merged.ExchRcvd = exchangeText(merged.RSTRcvd, exch, serial)
 	}
 	return &merged
 }
 
-// exchangeText rebuilds the editable exchange — the RST prefix followed by the
-// exchange, the inverse of qso.StripRSTPrefix — from the parts the remote copy
-// actually provided. ok is false when the remote said nothing about this side,
-// so the local text stays untouched.
-func exchangeText(rst string, strSet bool, exch string, serialSet bool, serial int) (string, bool) {
-	switch {
-	case strSet:
-		exch = strings.TrimSpace(exch)
-		if exch == "" && serialSet && serial > 0 {
-			exch = strconv.Itoa(serial)
-		}
-	case serialSet:
-		exch = ""
-		if serial > 0 {
-			exch = strconv.Itoa(serial)
-		}
-	default:
-		return "", false
+// remoteExchange reports the exchange one side of the remote copy carries.
+// ok is false when the side holds no information at all (no serial and no
+// exchange string), in which case the local values must stay untouched.
+func remoteExchange(serial *int, exch string, serialSet, exchSet bool) (int, string, bool) {
+	n := 0
+	if serialSet && serial != nil && *serial > 0 {
+		n = *serial
 	}
+	if !exchSet {
+		exch = ""
+	}
+	exch = strings.TrimSpace(exch)
+	if n == 0 && exch == "" {
+		return 0, "", false
+	}
+	return n, exch, true
+}
+
+// exchangeText rebuilds the editable exchange — the RST prefix followed by the
+// exchange, the inverse of qso.StripRSTPrefix — from the values just taken from
+// the remote copy. The editor re-derives the four fields from this text on save,
+// so it has to match them: a stale text would resurrect the old serials.
+func exchangeText(rst, exch string, serial int) string {
 	if exch == "" {
-		return "", true
+		if serial <= 0 {
+			return ""
+		}
+		exch = strconv.Itoa(serial)
 	}
 	if rst = strings.TrimSpace(rst); rst != "" {
-		return rst + " " + exch, true
+		return rst + " " + exch
 	}
-	return exch, true
+	return exch
 }
 
 // strptr returns a pointer to s, so an empty string can be distinguished

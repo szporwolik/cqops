@@ -105,7 +105,7 @@ Fordert **DUPE!** eine Bestätigung, speichert ein weiteres **Enter** trotzdem; 
 | F7 | Band Plan | Frequenzen und Betriebsvorgaben |
 | F8 | Logbook | Bearbeiten, importieren, exportieren, synchronisieren |
 | F9 | Configuration | Stations- und Diensteinstellungen |
-| F10 | Quit | CQOps beenden |
+| F10 / Alt+0 | Quit | CQOps beenden |
 
 Oben stehen die aktive Stationseinrichtung, Ortszeit (**L**) und UTC (**Z**). Weiß bedeutet normalerweise aktiv, Gelb deaktiviert/Verbindungsaufbau/Warten und Rot einen Fehler. WSJT ist während des Sendens hervorgehoben. **WL!** warnt vor einem nicht unterstützten alten Wavelog-Schlüssel.
 
@@ -287,7 +287,7 @@ Das Dashboard aktualisiert Kontakt, QSO-Karten, letzte Verbindungen, Raten, Oper
 
 | Bildschirm | Tasten | Aktion |
 |---|---|---|
-| Allgemein | ? / Esc / F10 | Hilfe / zurück / beenden |
+| Allgemein | ? / Esc / F10 / Alt+0 | Hilfe / zurück / beenden |
 | QSO | Tab / Shift+Tab | Nächstes / vorheriges Feld |
 | QSO | Enter / Ins | Speichern / abfragen |
 | QSO | Shift+Backspace / Del | Feld / Formular leeren |

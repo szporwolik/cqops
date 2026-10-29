@@ -42,14 +42,12 @@ var (
 
 	disabledTabStyle = tabStyle.Foreground(P.TextDim)
 
-	tabGapStyle = tabStyle.
-			BorderTop(false).
-			BorderLeft(false).
-			BorderRight(false)
+	// tabGapBorder paints the run of the bar's bottom border that fills the
+	// space between the tabs and the right edge.
+	tabGapBorder = lipgloss.NewStyle().Foreground(P.Border)
 )
 
 // tabView renders the function-key tab bar using lipgloss's tab border pattern.
-// Cached — only rebuilds when screen, partner presence, or confirm state change.
 func (m *Model) tabView() string {
 	hasPartner := m.lookup.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != ""
 
@@ -174,12 +172,15 @@ func (m *Model) tabView() string {
 		}
 	}
 
-	// Fill remaining width with border-only gap tab.
+	// Fill the remaining width with the bar's bottom border. The filler has no
+	// horizontal padding, so the bar is exactly w cells wide: the padded gap tab
+	// it replaces made the bar two cells wider than the terminal, and lipgloss
+	// pads every frame line to the widest one.
 	gapW := w - lipgloss.Width(row)
-	if gapW < 1 {
-		gapW = 1
+	if gapW < 0 {
+		gapW = 0
 	}
-	gap := tabGapStyle.Render(strings.Repeat(" ", gapW))
+	gap := strings.Repeat(" ", gapW) + "\n" + tabGapBorder.Render(strings.Repeat("─", gapW))
 
 	result := lipgloss.JoinHorizontal(lipgloss.Bottom, row, gap)
 	m.rc.tabSig = sig

@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/szporwolik/cqops/internal/qso"
 )
@@ -95,6 +97,150 @@ func BenchmarkGetLogbookStats_50k(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		if _, err := GetLogbookStats(db, "SP1ABC", "20m", "SSB"); err != nil {
 			b.Fatalf("GetLogbookStats: %v", err)
+		}
+	}
+}
+
+// UpdateQSO runs for every logbook save, and reindexQSO skips the worked
+// aggregates when the edit cannot change them. Before that check, the removal
+// half re-derived first/last/source_mask from the whole qsos table for every
+// aggregate the contact belongs to — a comment-only save on a large log cost
+// hundreds of milliseconds, in a transaction that blocks the UI.
+func BenchmarkUpdateQSOCommentOnly_50k(b *testing.B) {
+	db := benchDB(b, 50_000)
+	// The target row is written through InsertQSO so every column is populated
+	// and GetQSOByID can read it back (the bulk seeding helper writes only the
+	// columns the read benchmarks need).
+	id, err := InsertQSO(db, &qso.QSO{
+		Call: "SP9BENCH", Band: "20m", Mode: "SSB", GridSquare: "JO90AA",
+		DXCC: "269", QSODate: "20260401", TimeOn: "120000", Freq: 14.2,
+		RSTSent: "59", RSTRcvd: "59",
+	})
+	if err != nil {
+		b.Fatalf("insert target: %v", err)
+	}
+	q, err := GetQSOByID(db, id)
+	if err != nil {
+		b.Fatalf("load qso: %v", err)
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		q.Comment = fmt.Sprintf("bench %d", i)
+		if err := UpdateQSO(db, q); err != nil {
+			b.Fatalf("UpdateQSO: %v", err)
+		}
+	}
+}
+
+// Coverage runs on the partner panel for every callsign the operator enters,
+// and its answer describes the whole logbook rather than the partner. It used
+// to scan qsos for that (see the Scan variant); the numbers are maintained with
+// the worked index now, so the cost is a few point lookups.
+func BenchmarkCoverage_50k(b *testing.B) {
+	db := benchDB(b, 50_000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := Coverage(db); err != nil {
+			b.Fatalf("Coverage: %v", err)
+		}
+	}
+}
+
+// BenchmarkCoverageScan_50k is the previous implementation: one pass over qsos.
+func BenchmarkCoverageScan_50k(b *testing.B) {
+	db := benchDB(b, 50_000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := scanCoverage(db); err != nil {
+			b.Fatalf("scanCoverage: %v", err)
+		}
+	}
+}
+
+// GetDashboardStats runs for the dashboard's rate/count panel. It aggregates
+// the whole event window, so it is the expensive part of a dashboard push —
+// which is why the TUI computes it off the update loop now. The benchmark uses
+// a start date before every seeded contact, i.e. the whole logbook, the worst
+// case for a long event.
+func benchmarkGetDashboardStats(b *testing.B, rows int) {
+	db := benchDB(b, rows)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := GetDashboardStats(db, "20200101"); err != nil {
+			b.Fatalf("GetDashboardStats: %v", err)
+		}
+	}
+}
+
+func BenchmarkGetDashboardStats_10k(b *testing.B)  { benchmarkGetDashboardStats(b, 10_000) }
+func BenchmarkGetDashboardStats_100k(b *testing.B) { benchmarkGetDashboardStats(b, 100_000) }
+
+// BenchmarkDashboardStatsSplit_100k compares the two halves the dashboard now
+// calls separately: the window totals are read on a data change, the rates and
+// the elapsed time on the minute timer. The minute path is the second pair.
+func BenchmarkDashboardStatsSplit_100k(b *testing.B) {
+	db := benchDB(b, 100_000)
+	now := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	b.Run("totals_and_rates_combined", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if _, err := GetDashboardStats(db, "20200101"); err != nil {
+				b.Fatalf("GetDashboardStats: %v", err)
+			}
+		}
+	})
+	b.Run("totals", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if _, err := GetDashboardTotals(db, "20200101"); err != nil {
+				b.Fatalf("GetDashboardTotals: %v", err)
+			}
+		}
+	})
+	b.Run("rates_only_minute_refresh", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if _, err := GetDashboardRates(db, now); err != nil {
+				b.Fatalf("GetDashboardRates: %v", err)
+			}
+		}
+	})
+}
+
+// dxccCountryFallbackExists runs for every callsign the partner panel looks up,
+// and its answer is a single bit. On a log where the legacy rows match in bulk
+// the COUNT(*) form had to aggregate all of them; EXISTS stops at the first.
+func BenchmarkDXCCFallbackExists_100k(b *testing.B) {
+	db := benchDB(b, 100_000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		// Entity 999 is absent from the seed, so every row satisfies the
+		// "different entity" disjunct and about a fifth match the country.
+		if _, err := dxccCountryFallbackExists(db, "999", "Poland"); err != nil {
+			b.Fatalf("dxccCountryFallbackExists: %v", err)
+		}
+	}
+}
+
+// BenchmarkDXCCFallbackCount_100k is the previous implementation, kept for the
+// comparison: COUNT(*) with LIMIT 1 still counts every matching row.
+func BenchmarkDXCCFallbackCount_100k(b *testing.B) {
+	db := benchDB(b, 100_000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		var n int
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM qsos
+			 WHERE (dxcc IS NULL OR dxcc = '' OR dxcc != ?) AND country LIKE ? COLLATE NOCASE LIMIT 1`,
+			"999", strings.ToLower("Poland")+"%",
+		).Scan(&n); err != nil {
+			b.Fatalf("count form: %v", err)
 		}
 	}
 }

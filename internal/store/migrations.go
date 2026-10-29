@@ -150,7 +150,16 @@ var migrations = []string{
 	// the ORDER BY directly, so no per-refresh sort of the contest subset.
 	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_date_time ON qsos(contest_id, qso_date DESC, time_on DESC)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_adif_date ON qsos(contest_adif_id, qso_date DESC, time_on DESC)`,
-	`CREATE INDEX IF NOT EXISTS idx_qsos_date_time ON qsos(qso_date DESC, time_on DESC)`,
+	// Logbook paging orders by qso_date DESC, time_on DESC, id DESC. SQLite
+	// appends the rowid to every index key, so a two-column index is ordered
+	// by date DESC, time DESC, rowid ASC — `id DESC` is not served and the
+	// plan degrades to "USE TEMP B-TREE FOR LAST TERM OF ORDER BY", which
+	// materialises and sorts the whole filtered set before the OFFSET can be
+	// skipped (194 ms first page / 387 ms last page on 100k contacts sharing
+	// one date+time). Carrying id DESC explicitly removes the sort step.
+	// This index subsumes the old idx_qsos_date_time (same leading columns),
+	// which migrateDropRedundantIndexes retires on existing databases.
+	`CREATE INDEX IF NOT EXISTS idx_qsos_date_time_id ON qsos(qso_date DESC, time_on DESC, id DESC)`,
 
 	`CREATE INDEX IF NOT EXISTS idx_qsos_country_base ON qsos(country, base_call)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_dxcc ON qsos(dxcc)`,
@@ -423,6 +432,11 @@ func ensureColumnIndexes(db *sql.DB) error {
 	for _, idx := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_qsos_dxcc ON qsos(dxcc)`,
 		`CREATE INDEX IF NOT EXISTS idx_qsos_wavelog_id ON qsos(wavelog_id)`,
+		// Logbook paging order. It lives here as well as in the base DDL
+		// because a database already at the current schema skips the
+		// migration list; without this line a released logbook would keep
+		// paying the temp-B-tree sort forever. Idempotent via IF NOT EXISTS.
+		`CREATE INDEX IF NOT EXISTS idx_qsos_date_time_id ON qsos(qso_date DESC, time_on DESC, id DESC)`,
 		// NOCASE lets the DXCC-scope lookup match country case-insensitively
 		// through an index; the plain idx_qsos_country cannot serve it.
 		`CREATE INDEX IF NOT EXISTS idx_qsos_country_nocase ON qsos(country COLLATE NOCASE)`,
@@ -446,12 +460,16 @@ func ensureColumnIndexes(db *sql.DB) error {
 // the repository (EXPLAIN QUERY PLAN over a seeded logbook): the single-
 // column call/band/mode lookups are served by idx_qsos_call_band_mode_date or
 // idx_qsos_base_call_band_mode_date, contest lookups by contest_id +
-// contest_adif_id, and ordering by idx_qsos_date_time.
+// contest_adif_id, and ordering by idx_qsos_date_time_id. idx_qsos_date_time
+// is retired because the three-column index has its leading columns and adds
+// the id tiebreaker paging needs; keeping both would grow every save for no
+// query.
 func migrateDropRedundantIndexes(db *sql.DB) error {
 	for _, idx := range []string{
 		"idx_qsos_country", "idx_qsos_submode",
 		"idx_qsos_call", "idx_qsos_band", "idx_qsos_mode",
 		"idx_qsos_date_time_call", "idx_qsos_date_operator",
+		"idx_qsos_date_time",
 		"idx_qsos_date_call_band_mode", "idx_qsos_contest_call_band_mode",
 	} {
 		if _, err := db.Exec(`DROP INDEX IF EXISTS ` + idx); err != nil {

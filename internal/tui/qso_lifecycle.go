@@ -204,6 +204,12 @@ func (m *Model) invalidateDXCDupes() {
 	m.rc.dxcDupeSig = ""
 }
 
+// qsoDataChanged bumps the QSO revision. Call it whenever the log's contents
+// changed outside a refreshQSOS (which does it itself): panels that cache
+// derived data — the contest rate panel reads the whole contest once per
+// revision — compare against it instead of re-reading on every tick.
+func (m *Model) qsoDataChanged() { m.qsoRev++ }
+
 // refreshQSOS reloads the QSO list from the store, updates the RecentQSOs component,
 // and re-applies any active filter. Returns a non-nil message to trigger a re-render.
 // Also busts the logbook-wide counts cache so the profile line picks up new QSOs.
@@ -211,6 +217,7 @@ func (m *Model) refreshQSOS() tea.Cmd {
 	db := m.App.DB // capture before async execution — logbook cycle may swap it
 	logbook := m.App.LogbookName
 	contest := m.App.Logbook.ActiveContest
+	m.qsoDataChanged()         // contest panel: the history it caches is stale
 	m.rc.logbookStatsDate = "" // force re-fetch on next tick
 	m.invalidateDXCDupes()     // QSO data changed — dupe markers are stale
 	return func() tea.Msg {

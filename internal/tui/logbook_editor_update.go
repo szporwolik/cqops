@@ -199,13 +199,43 @@ type editorMsg struct {
 	searchErr   string
 }
 
+// editorErrorCmd turns a failed read into the toast the owner loop shows. The
+// editor has no toast queue of its own, and a page read that fails must be
+// reported — silently keeping the old rows would look like a logbook that did
+// not change.
+func editorErrorCmd(err error) tea.Cmd {
+	if err == nil {
+		return nil
+	}
+	return func() tea.Msg { return editorMsg{err: err} }
+}
+
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// A failed page read installs nothing (the previous page stays on screen)
+	// and is reported once, at the end of the update.
+	var loadErr error
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		if msg.Width != le.width || msg.Height != le.height {
+			// The page size follows the height, so the selected contact has to be
+			// the anchor across the resize — a page number means a different row
+			// at a different page size. The contact id is the anchor of last
+			// resort: a contact appended while this page was on screen shifts
+			// every row below it, so the position alone would select its
+			// neighbour and the next edit would hit the wrong contact.
+			anchor := le.anchorIndex()
+			id := le.selectedQSOID()
 			le.width = msg.Width
 			le.height = msg.Height
 			le.buildTable()
+			if le.searchQuery != "" {
+				// A search result is not paged: only the table was rebuilt, and
+				// rebuilding replaces it (with a cursor at the top), so the
+				// selection has to be put back explicitly.
+				le.restoreSelection(anchor, id)
+			} else {
+				loadErr = le.repageAfterResize(anchor, id)
+			}
 		}
 
 	case uploadPrepMsg:
@@ -606,21 +636,22 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			le.done = true
 		case "pgup":
-			le.goToPage(le.currentPage - 1)
+			return le, editorErrorCmd(le.goToPage(le.currentPage - 1))
 		case "pgdown":
-			le.goToPage(le.currentPage + 1)
+			return le, editorErrorCmd(le.goToPage(le.currentPage + 1))
 		case "up", "down", "left", "right", "home", "end":
 			// Before passing to table, check for page boundary overflow.
 			cursor := le.table.Cursor()
 			if k == "down" {
 				if cursor >= len(le.qsos)-1 && le.currentPage < le.totalPages() {
-					le.goToPage(le.currentPage + 1)
-					return le, nil
+					return le, editorErrorCmd(le.goToPage(le.currentPage + 1))
 				}
 			}
 			if k == "up" {
 				if cursor <= 0 && le.currentPage > 1 {
-					le.goToPage(le.currentPage - 1)
+					if err := le.goToPage(le.currentPage - 1); err != nil {
+						return le, editorErrorCmd(err)
+					}
 					// Set cursor to last row of the new page.
 					if len(le.qsos) > 0 {
 						le.table.SetCursor(len(le.qsos) - 1)
@@ -799,10 +830,10 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// holds stale data and batch uploads operate on outdated QSOs.
 	if le.needsReload && le.mode == edModeList && le.height > 0 {
 		le.needsReload = false
-		le.loadPage()
+		loadErr = le.loadPage()
 	}
 
-	return le, nil
+	return le, editorErrorCmd(loadErr)
 }
 
 // handleNormalizeResult applies a completed normalization on the owner loop:

@@ -105,8 +105,29 @@ function setState(active){
   }
   if(active&&!todayQsos.length)updateMapFromToday()
 }
-function switchToOverview(){D('state','overview');setState(false);activeGrid=null;updateMapFromToday()}
+// overviewState leaves the active-contact layout without touching the map.
+// Callers that redraw it anyway (a saved QSO changes todayQsos) use this, so
+// one event does not rebuild every marker and path twice — each rebuild drops
+// the layers and recreates up to 200 markers and 150 routes.
+function overviewState(){D('state','overview');setState(false);activeGrid=null}
+function switchToOverview(){overviewState();updateMapFromToday()}
 function switchToActive(){D('state','active');setState(true)}
+
+// handleQsoLogged applies a contact the operator just saved: it joins today's
+// list, the view leaves the active-contact layout, and the map is rebuilt once
+// in its final state. Keeping it as one named function is also what lets the
+// browser-less test drive the real handler instead of matching source text.
+function handleQsoLogged(q){
+  D('sse','qso_logged',q.call+' '+q.band+' '+q.mode);
+  appendTodayQSO(q);
+  prependRecentRow(q);
+  overviewState();
+  updateMapFromToday();
+  renderHero(null);
+  renderStats(null,todayQsos);
+  showQsoToast(q);
+  playPing()
+}
 
 // ---- SSE ----
 var sseReconnects=0;
@@ -156,21 +177,19 @@ function connectSSE(){
     if(a&&a.call){switchToActive();renderHero(a,lastPartner&&lastPartner.call===a.call?lastPartner:null)}
     else{switchToOverview();renderHero(null);lastActiveFlags={}}
   });
-  es.addEventListener('qso_logged',function(e){var q=JSON.parse(e.data).payload;
-    D('sse','qso_logged',q.call+' '+q.band+' '+q.mode);
-    appendTodayQSO(q);prependRecentRow(q);updateMapFromToday();switchToOverview();renderHero(null);renderStats(null,todayQsos);showQsoToast(q);playPing()
+  es.addEventListener('qso_logged',function(e){
+    handleQsoLogged(JSON.parse(e.data).payload)
   });
   es.addEventListener('rig',function(e){var r=JSON.parse(e.data).payload;
     D('sse','rig',r.connected?(r.frequency||'?')+' '+(r.mode||''):'disconnected');
-    updateStationField('Rig',r.connected?'<span class=\"status-on\">●</span> Connected':'<span class=\"status-off\">○</span> Disconnected');
-    if(r.frequency)updateStationField('Frequency',esc(r.frequency)+(r.band?' <span class=\"stat-badge '+bandBadgeClass(r.band)+'\">'+esc(r.band)+'</span>':'')+(r.mode?' <span class=\"stat-badge '+modeBadgeClass(r.mode)+'\">'+esc(r.mode)+'</span>':'')+(r.submode?' <span class=\"stat-badge '+modeBadgeClass(r.submode)+'\">'+esc(r.submode)+'</span>':''));
+    cardState.rig=r;renderStationCard()
   });
   es.addEventListener('wsjtx',function(e){var w=JSON.parse(e.data).payload;
     D('sse','wsjtx',w.connected?'online':'offline');
-    updateStationField('WSJT-X',w.connected?'<span class=\"status-on\">●</span> Online':'<span class=\"status-off\">○</span> Offline')
+    cardState.wsjtx=w;renderStationCard()
   });
   es.addEventListener('stats',function(e){var s=JSON.parse(e.data).payload;
-    D('sse','stats',{today:s.qsosToday,calls:s.uniqueCalls,rate:s.ratePerHour});
+    D('sse','stats',{today:s.qsosToday,calls:s.uniqueCalls,rate5m:s.rate5m,rate15m:s.rate15m,rate60m:s.rate60m});
     renderStats(s,todayQsos)
   });
   es.addEventListener('recent_qsos',function(e){var r=JSON.parse(e.data).payload;
@@ -184,28 +203,25 @@ function connectSSE(){
       ownAprsLon=s.aprsPos?s.aprsPos.lon:null;
       ownAprsLocator=s.aprsLocator||'';
       var op=_ownPos();
-      initLocalMap(op.lat,op.lon);recentreLocalMap(op.lat,op.lon);updateAprsCircle(op.lat,op.lon,s.aprsRadiusKm||0);updateMapFromToday()}else{recentreLocalMapFromStation(s)}renderStation(s)
+      initLocalMap(op.lat,op.lon);recentreLocalMap(op.lat,op.lon);updateAprsCircle(op.lat,op.lon,s.aprsRadiusKm||0);updateMapFromToday()}else{recentreLocalMapFromStation(s)}cardState.station=s;renderStationCard()
   });
   es.addEventListener('operator',function(e){var o=JSON.parse(e.data).payload;
     D('sse','operator',o.callsign);
-    var opVal=o.callsign||ownStationCall;
-    updateStationField('Operator',opVal?opBadgeHTML(opVal,o.name):'—')
+    cardState.operator=o;renderStationCard()
   });
   es.addEventListener('logbook',function(e){var lb=JSON.parse(e.data).payload;
     D('sse','logbook',lb.name);
     if(lb&&lb.name){
       document.title='CQOps - '+lb.name;window._discLogbook=lb.name;
-      // Force the next today event to be accepted regardless of count.
-      window._cqopsLiveLogbook=lb.name;
-      // Immediately clear today QSOs so the map shows empty until the
-      // fresh today event arrives — prevents stale markers from the
-      // previous logbook.
-      if(window._cqopsLastTodayLogbook&&window._cqopsLastTodayLogbook!==lb.name){
+      // The contacts on screen belong to the previous logbook: clear them so
+      // the map and Top QSOs show no stale markers until the fresh today event
+      // arrives (the switch pushes the logbook event before the list).
+      if(window._cqopsTodayLogbook&&window._cqopsTodayLogbook!==lb.name){
         todayQsos=[];updateMapFromToday();renderStats(null,[]);renderTopQSOs();
-        window._cqopsLastTodayLogbook=lb.name;
       }
+      window._cqopsTodayLogbook=lb.name;
     }
-    updateStationField('Logbook',esc(lb.name))
+    cardState.logbook=lb;renderStationCard()
   });
   es.addEventListener('partner',function(e){var p=JSON.parse(e.data).payload;
     D('sse','partner',p? p.call+' '+(p.imageUrl?'📷':''):'<cleared>');
@@ -226,12 +242,14 @@ function connectSSE(){
   es.addEventListener('today',function(e){
     var t=JSON.parse(e.data).payload;
     D('sse','today',t? t.length:0);
-    // Only guard against fewer results when we're still on the SAME
-    // logbook — a fresh QSO may briefly see fewer QSOs than the
-    // previous push. When the logbook changes, always replace.
+    // The payload is the server's complete answer for the active logbook, so
+    // it is authoritative — including an empty list. Ignoring a shorter list
+    // (the old "a fresh QSO may briefly see fewer rows" guard) also ignored
+    // every deletion and an emptied logbook: the deleted contacts stayed on
+    // the map and in Top QSOs until the page was reloaded. Ordering is already
+    // guaranteed — every push is built on the TUI loop and sent over one SSE
+    // stream, so a newer answer cannot be followed by an older one.
     if(!t)return;
-    if(window._cqopsLiveLogbook===window._cqopsLastTodayLogbook&&t.length<todayQsos.length)return;
-    window._cqopsLastTodayLogbook=window._cqopsLiveLogbook;
     todayQsos=t;updateMapFromToday();renderStats(null,todayQsos);
   });
   es.addEventListener('aprs',function(e){
@@ -327,7 +345,7 @@ function renderAll(snap){
   window._cqopsLastOnline=nowOnline;
   if(displayCfg.internetCallbookUrl) icbUrl=displayCfg.internetCallbookUrl;
   // Window title — show active logbook.
-  if(snap.logbook&&snap.logbook.name){document.title='CQOps - '+snap.logbook.name;window._discLogbook=snap.logbook.name;window._cqopsLiveLogbook=snap.logbook.name;window._cqopsLastTodayLogbook=snap.logbook.name}
+  if(snap.logbook&&snap.logbook.name){document.title='CQOps - '+snap.logbook.name;window._discLogbook=snap.logbook.name;window._cqopsTodayLogbook=snap.logbook.name}
   // Theme — apply theme class to root element.
   var wasDark=document.documentElement.classList.contains('dark');
   var theme=displayCfg.theme;
@@ -377,7 +395,14 @@ function renderAll(snap){
       refreshOwnStationMarker();
     }
   }
-  renderStation(snap.station,snap.operator,snap.logbook,snap.rig,snap.wsjtx);
+  // A snapshot taken before the first rig/wsjtx push must not blank rows
+  // an event already filled, so keep whatever is already known.
+  cardState.station=snap.station||cardState.station;
+  cardState.operator=snap.operator||cardState.operator;
+  cardState.logbook=snap.logbook||cardState.logbook;
+  cardState.rig=snap.rig||cardState.rig;
+  cardState.wsjtx=snap.wsjtx||cardState.wsjtx;
+  renderStationCard();
   // Active QSO
   if(snap.activeQso&&snap.activeQso.call){switchToActive();renderHero(snap.activeQso,snap.partner)}
   else{switchToOverview();renderHero(null)}
@@ -613,7 +638,18 @@ function renderStation(st,op,lb,rig,wsjtx){
   }
   stationFields.innerHTML=rows.map(function(r){return'<dt>'+r[0]+'</dt><dd id=\"sf-'+r[0]+'\">'+r[1]+'</dd>'}).join('');
 }
-function updateStationField(key,val){var el=document.getElementById('sf-'+key);if(el)el.innerHTML=val}
+
+// Live values behind the station card. A `station` event carries only the
+// station payload, so re-rendering the card from that event alone blanked
+// every row fed by its own event: the card read "Rig o Disconnected",
+// "WSJT-X o Offline", "Logbook -" and "Frequency -" while the rig was on
+// the air, because each station push (every couple of seconds) wiped the
+// rows the rig/wsjtx/logbook events had just filled.
+var cardState={station:null,operator:null,logbook:null,rig:null,wsjtx:null};
+function renderStationCard(){
+  if(!cardState.station)return;
+  renderStation(cardState.station,cardState.operator,cardState.logbook,cardState.rig,cardState.wsjtx);
+}
 
 // ---- Stats ----
 // Band order for frequency-consistent badge sorting.
@@ -1082,8 +1118,8 @@ var aprsCircleLayer=null;
 var ownAprs={active:false,callsign:'',symbol:'/-',sig:''};
 
 // _ownStationMarker builds the "you are here" marker. Receive-only mode keeps
-// the plain dot; while beaconing the APRS symbol CQOps transmits and the
-// callsign-SSID label sit underneath it.
+// the plain dot; while beaconing the marker IS the APRS symbol CQOps transmits
+// — no second dot in front of it — with the callsign-SSID label underneath.
 function _ownStationMarker(lat,lon,pt,small){
   if(!ownAprs.active){
     if(small){
@@ -1092,12 +1128,15 @@ function _ownStationMarker(lat,lon,pt,small){
     return L.circleMarker([lat,lon],{radius:9,color:pt.station,fillColor:pt.station,fillOpacity:0.85,weight:2.5,className:'station-dot'});
   }
   var html='<div class="own-aprs">'+
-    '<div class="own-aprs-dot" style="background:'+pt.station+';border-color:'+pt.station+';"></div>'+
     '<div class="own-aprs-sym">'+_aprSymbolHTML(ownAprs.symbol)+'</div>'+
     '<div class="apr-label">'+esc(ownAprs.callsign)+'</div>'+
   '</div>';
-  var opts={icon:L.divIcon({className:'own-aprs-marker',iconSize:[110,62],iconAnchor:[55,small?7:11],html:html}),zIndexOffset:600};
-  if(small)opts.pane='shadowPane';
+  // The anchor puts the symbol centre on the position the plain dot used to
+  // occupy, so switching the beacon on does not move the station. Our own
+  // symbol has to stay readable: the marker pane (not shadowPane, where the
+  // local-map dot lived) plus a z-offset large enough to beat Leaflet's
+  // latitude ordering among the neighbouring APRS symbols.
+  var opts={icon:L.divIcon({className:'own-aprs-marker',iconSize:[110,40],iconAnchor:[55,12],html:html}),zIndexOffset:100000};
   return L.marker([lat,lon],opts);
 }
 
@@ -1142,7 +1181,9 @@ function initLocalMap(lat,lon){
     // aligned).
     mapLocal._cqopsOffline=L.imageOverlay(_earthURL(mapLocal),[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(mapLocal);
   }
-  // Station marker on local map — small, below APRS symbols.
+  // Own station on the local map. While beaconing it is the transmitted APRS
+  // symbol, drawn in the marker pane above the neighbouring APRS stations;
+  // receive-only keeps the small dot below them.
   var lpos=_ownPos();
   stationLocalMarker=_ownStationMarker(lpos.lat,lpos.lon,qsoPathTheme(),true).addTo(mapLocal);
   if(window.ResizeObserver){new ResizeObserver(function(){mapLocal.invalidateSize()}).observe(lc)}
@@ -1734,6 +1775,7 @@ function updateMapFromToday(){
   }
 
   // ---- Active line (drawn on top, outside today loop) ----
+  var activeBounds=null;
   if(activeGrid&&ownStationLat!==null){
     var al=gridToLatLon(activeGrid);if(al[0]){
       var actPts=greatCirclePoints(ownStationLat,ownStationLon,al[0],al[1],48);
@@ -1744,18 +1786,40 @@ function updateMapFromToday(){
       // Include great-circle midpoint so arc stays in bounds.
       bounds.push(actPts[24]);
       bounds.push(al);
+      // The working contact owns the view. Fitting the path (not the station)
+      // is what keeps both ends on screen: a station-centred zoom 6 on a
+      // narrow map leaves a distant partner (1000 km+) past the right edge.
+      activeBounds=L.latLngBounds([[ownStationLat,ownStationLon],al]).extend(actPts[24]);
     }
   }
 
-  // Fit bounds — but don't override active-QSO focus set by focusMapOnGrid.
-  if(bounds.length>1&&!activeGrid)map.flyToBounds(bounds,{padding:[50,50],maxZoom:18});
+  // Fit bounds — an active QSO takes precedence over the whole-day overview.
+  // Only refit when the path is not fully visible, so a manual zoom/pan is
+  // kept and the animated focusMapOnGrid flight is not restarted by every
+  // snapshot.
+  if(activeBounds){
+    if(!map.getBounds().contains(activeBounds))fitActiveBounds(activeBounds);
+  }else if(bounds.length>1)map.flyToBounds(bounds,{padding:[50,50],maxZoom:18});
   else if(hasStation&&ownStationLat!=null)map.flyTo([ownStationLat,ownStationLon],6);
   else if(!hasStation)map.flyTo([51,10],2);
 }
 
+// fitActiveBounds frames the working contact's path. A flight that started a
+// moment ago is left alone — snapshots arrive well before the animation ends
+// and restarting it makes the map pump — but the guard is cleared as soon as
+// the map settles, so a view that is still wrong is corrected by the next
+// snapshot instead of staying wrong.
+var _activeFitAt=0;
+function fitActiveBounds(b,opts){
+  if(Date.now()-_activeFitAt<1500)return;
+  _activeFitAt=Date.now();
+  map.flyToBounds(b,opts||{padding:[50,50],maxZoom:17,duration:0.8});
+  map.once('moveend',function(){_activeFitAt=0});
+}
+
 function getQsoLatLon(q){if(q.lat&&q.lon)return[q.lat,q.lon];if(q.grid){var g=q.grid.toUpperCase();if(g==='AA00AA')return null;var ll=gridToLatLon(q.grid);if(ll[0])return ll}return null}
 
-function focusMapOnGrid(grid){if(!map)return;var ll=gridToLatLon(grid);if(!ll[0])return;map.invalidateSize();if(ownStationLat!=null&&ownStationLon!=null){var mid=greatCirclePoints(ownStationLat,ownStationLon,ll[0],ll[1],48)[24];var b=L.latLngBounds([[ownStationLat,ownStationLon],ll]);b.extend(mid);map.flyToBounds(b,{padding:[60,60],maxZoom:17,duration:2.5})}else{map.flyTo(ll,6,{duration:2})}}
+function focusMapOnGrid(grid){if(!map)return;var ll=gridToLatLon(grid);if(!ll[0])return;map.invalidateSize();if(ownStationLat!=null&&ownStationLon!=null){var mid=greatCirclePoints(ownStationLat,ownStationLon,ll[0],ll[1],48)[24];var b=L.latLngBounds([[ownStationLat,ownStationLon],ll]);b.extend(mid);fitActiveBounds(b,{padding:[60,60],maxZoom:17,duration:2.5})}else{map.flyTo(ll,6,{duration:2})}}
 function drawActiveLine(grid){if(grid===activeGrid)return;activeGrid=grid;updateMapFromToday()}
 
 // ---- Great-circle interpolation (browser-side, no plugin needed) ----

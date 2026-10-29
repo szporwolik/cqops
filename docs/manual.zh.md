@@ -105,7 +105,7 @@ sudo mv FILE /usr/local/bin/cqops
 | F7 | Band Plan | 频率与预设 |
 | F8 | Logbook | 编辑、导入、导出、同步 |
 | F9 | Configuration | 台站与服务设置 |
-| F10 | Quit | 退出 CQOps |
+| F10 / Alt+0 | Quit | 退出 CQOps |
 
 顶部显示当前台站配置、本地时间（**L**）及 UTC（**Z**）。连接标签通常以白色表示正常、黄色表示禁用／连接中／等待、红色表示错误。WSJT 发射时会高亮。**WL!** 表示使用了不支持的旧 Wavelog 密钥。
 
@@ -287,7 +287,7 @@ CQOps 提供休闲竞赛记录、交换信息、流水号和 QSO 速率，但并
 
 | 页面 | 按键 | 操作 |
 |---|---|---|
-| 通用 | ? / Esc / F10 | 帮助／返回／退出 |
+| 通用 | ? / Esc / F10 / Alt+0 | 帮助／返回／退出 |
 | QSO | Tab / Shift+Tab | 下一／上一字段 |
 | QSO | Enter / Ins | 保存／查询 |
 | QSO | Shift+Backspace / Del | 清空字段／表单 |

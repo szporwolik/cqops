@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"database/sql"
 	"fmt"
 	"hash/fnv"
 	"math"
@@ -131,10 +132,7 @@ func (m *Model) maybeHTTP() tea.Cmd {
 		seedStation.Callsign = st.Callsign
 		rp, hasRig := m.App.Config.Rigs[st.RigName]
 		if hasRig {
-			seedStation.Radio = rp.Name
-			if rp.Model != "" && rp.Model != rp.Name {
-				seedStation.Radio = rp.Name + " (" + rp.Model + ")"
-			}
+			seedStation.Radio = rigRadioLabel(rp)
 			seedStation.Antenna = rp.Antenna
 		}
 	}
@@ -548,6 +546,11 @@ var dashboardStatsRefreshInterval = 60 * time.Second
 // lastDashboardStatsPush stamps the last stats push, event-driven or periodic.
 var lastDashboardStatsPush time.Time
 
+// dashboardNow is the clock the statistics use for the event window and the
+// sliding rate windows. A variable so tests can drive the UTC rollover and the
+// 5/15/60-minute windows without waiting for real time.
+var dashboardNow = func() time.Time { return time.Now().UTC() }
+
 var lastDashboardPushTick int
 
 // Called from the tick handler every second. Most Set* calls early-exit because
@@ -576,15 +579,21 @@ func (m *Model) pushDashboardState() {
 	// rate windows keep sliding even when no new QSO arrives. The initial
 	// push (dashboardDataDirty==true) ensures the dashboard populates on
 	// startup.
+	//
+	// The stats aggregates are the expensive part (GetDashboardStats scans the
+	// event window), so this only marks them stale; dashboardStatsCmd runs the
+	// query off the update loop from the tick. Every other caller of this
+	// function (GPS, config save, logbook switch, HTTP status) therefore cannot
+	// drop a pending request by not running the command.
 	if dashboardDataDirty {
 		dashboardDataDirty = false
 		lastDashboardStatsPush = time.Now()
 		m.pushDashboardToday(ds)
-		m.pushDashboardStats(ds)
 		m.pushDashboardRecent(ds)
+		m.http.statsDue = true
 	} else if time.Since(lastDashboardStatsPush) >= dashboardStatsRefreshInterval {
 		lastDashboardStatsPush = time.Now()
-		m.pushDashboardStats(ds)
+		m.http.statsDue = true
 	}
 
 	// --- APRS stations for the local map (rate-limited, 30 s, or on-demand) ---
@@ -641,10 +650,7 @@ func (m *Model) pushDashboardFast() {
 		stationInfo.Lat, stationInfo.Lon = gridToLatLon(grid)
 	}
 	if hasRig {
-		stationInfo.Radio = rp.Name
-		if rp.Model != "" && rp.Model != rp.Name {
-			stationInfo.Radio = rp.Name + " (" + rp.Model + ")"
-		}
+		stationInfo.Radio = rigRadioLabel(rp)
 		stationInfo.Antenna = rp.Antenna
 	}
 	// Power: prefer the form value (updated by rig polling), fall back to config.
@@ -936,6 +942,14 @@ func (m *Model) invalidateDashboardFlags() {
 	lastActiveNewDXCC = false
 	lastPushedAQSO = cachedAQSO{}
 	dashboardDataDirty = true
+	// The cached window totals describe the data as it was before this change —
+	// a QSO more or less, an edited call or band, an enrichment that filled in
+	// the country. Drop them, and move the data revision too, so a computation
+	// that is still in flight cannot install them again (the revision travels
+	// with the message and is compared when the next refresh looks for a cache
+	// hit).
+	m.qsoDataChanged()
+	m.http.statsTotals.valid = false
 	// Clear country worked-before cache — the QSO we just saved may
 	// change country status.
 	clear(countryWorkedCache)
@@ -950,6 +964,12 @@ func (m *Model) forcePushDashboardAll() {
 	// Clear throttle/cache state so pushDashboardState runs every panel.
 	lastDashboardPushTick = 0
 	lastAPRSPush = time.Time{}
+	// Today and Recent are pushed only when the data is marked dirty, and a
+	// switch replaces the whole data set without writing a QSO. Without this the
+	// new logbook's contacts never reached the browser: the panel kept the
+	// previous logbook's list (the browser clears it on the logbook event, so the
+	// map and Top QSOs stayed empty until the next save).
+	dashboardDataDirty = true
 	// Use an unset fingerprint instead of a sentinel id list so that an
 	// empty result (0 QSOs in a fresh logbook) cannot "match" the cleared
 	// cache.
@@ -961,6 +981,9 @@ func (m *Model) forcePushDashboardAll() {
 	lastActiveNewDXCC = false
 	lastPushedPartner = cachedPartner{}
 	partnerEmpty = false
+	// The stats belong to the previous logbook: recompute them for the new one
+	// and let applyDashboardStats drop a result that is still in flight.
+	m.http.statsDue = true
 	m.pushDashboardState()
 }
 
@@ -979,8 +1002,23 @@ type panelFingerprint struct {
 	set    bool
 }
 
-// newPanelFingerprint builds the id list and content digest for qsos.
-func newPanelFingerprint(qsos []qso.QSO) panelFingerprint {
+// rigRadioLabel is the "Radio" row of the dashboard's station card: the preset
+// name with the model in parentheses when they differ. A preset that carries
+// only a model (or neither) must not render as a bare " (model)".
+func rigRadioLabel(rp config.RigPreset) string {
+	name := rp.Name
+	if name == "" {
+		name = rp.Model
+	}
+	if rp.Model == "" || rp.Model == name {
+		return name
+	}
+	return name + " (" + rp.Model + ")"
+}
+
+// newPanelFingerprint builds the id list and content digest for the dashboard
+// projection rows.
+func newPanelFingerprint(qsos []store.DashboardQSO) panelFingerprint {
 	ids := make([]int64, len(qsos))
 	h := fnv.New64a()
 	var num [32]byte
@@ -999,6 +1037,38 @@ func newPanelFingerprint(qsos []qso.QSO) panelFingerprint {
 		h.Write(strconv.AppendInt(num[:0], int64(math.Round(q.Freq*1_000_000)), 10))
 	}
 	return panelFingerprint{ids: ids, digest: h.Sum64(), set: true}
+}
+
+// dashboardViews renders the dashboard projection as the payload the browser
+// receives. Today and Recent share it so the two panels cannot drift apart.
+func dashboardViews(qsos []store.DashboardQSO) []dashboard.QSOView {
+	views := make([]dashboard.QSOView, 0, len(qsos))
+	for _, q := range qsos {
+		t, err := time.Parse("20060102 150405", q.QSODate+" "+q.TimeOn)
+		if err != nil {
+			t = time.Now().UTC()
+		}
+		view := dashboard.QSOView{
+			ID:        fmt.Sprintf("%d", q.ID),
+			TimeUTC:   t,
+			Call:      q.Call,
+			Band:      q.Band,
+			Mode:      q.Mode,
+			Submode:   q.Submode,
+			Frequency: fmt.Sprintf("%.3f MHz", q.Freq),
+			RSTSent:   q.RSTSent,
+			RSTRcvd:   q.RSTRcvd,
+			Grid:      q.GridSquare,
+			MyGrid:    q.MyGridSquare,
+			Country:   q.Country,
+			Operator:  q.Operator,
+		}
+		if q.Freq > 0 {
+			view.FrequencyHz = int64(q.Freq * 1_000_000)
+		}
+		views = append(views, view)
+	}
+	return views
 }
 
 // equal reports whether two fingerprints describe the same panel content.
@@ -1040,28 +1110,37 @@ func (m *Model) countryWorkedBefore(country string) bool {
 		return cached
 	}
 
-	var count int
+	var found bool
 	var err error
+	// EXISTS, not COUNT(*): only "is there at least one?" is used, and a count
+	// has to aggregate every match before the answer exists. On a 10k-contact
+	// fixture the counting form took 2.41 ms on a positive match, the existence
+	// form 0.10 ms — this runs synchronously while the operator types a new
+	// call. A negative answer still searches everything, in both forms.
 	if dxcc != "" {
 		err = m.App.DB.QueryRow(
-			`SELECT COUNT(*) FROM (
-				SELECT base_call FROM qsos WHERE dxcc = ?
-				UNION ALL
-				SELECT base_call FROM qsos
-				WHERE (dxcc IS NULL OR dxcc = '' OR dxcc != ?)
-					AND country LIKE ? COLLATE NOCASE
-			) WHERE base_call != ?`,
+			`SELECT EXISTS(
+				SELECT 1 FROM (
+					SELECT base_call FROM qsos WHERE dxcc = ?
+					UNION ALL
+					SELECT base_call FROM qsos
+					WHERE (dxcc IS NULL OR dxcc = '' OR dxcc != ?)
+						AND country LIKE ? COLLATE NOCASE
+				) WHERE base_call != ?
+			)`,
 			dxcc, dxcc, country+"%", baseCall,
-		).Scan(&count)
+		).Scan(&found)
 	} else {
 		err = m.App.DB.QueryRow(
-			`SELECT COUNT(*) FROM qsos
-			WHERE (country = ? COLLATE NOCASE OR country LIKE ? COLLATE NOCASE)
-				AND base_call != ?`,
+			`SELECT EXISTS(
+				SELECT 1 FROM qsos
+				WHERE (country = ? COLLATE NOCASE OR country LIKE ? COLLATE NOCASE)
+					AND base_call != ?
+			)`,
 			country, country+"%", baseCall,
-		).Scan(&count)
+		).Scan(&found)
 	}
-	result := err == nil && count > 0
+	result := err == nil && found
 	storeCountryWorked(cacheKey, result)
 	return result
 }
@@ -1093,7 +1172,7 @@ func (m *Model) pushDashboardRecent(ds *dashboard.State) {
 	eventStart := m.eventStartDate()
 	limit := 20
 
-	var qsos []qso.QSO
+	var qsos []store.DashboardQSO
 	var err error
 
 	if eventStart != "" {
@@ -1141,42 +1220,19 @@ func (m *Model) pushDashboardRecent(ds *dashboard.State) {
 	applog.Debug("dashboard: recent_qsos changed, pushing", "count", len(fp.ids), "prevCount", len(lastRecentFP.ids))
 	lastRecentFP = fp
 
-	views := make([]dashboard.QSOView, 0, len(qsos))
-	for _, q := range qsos {
-		t, err := time.Parse("20060102 150405", q.QSODate+" "+q.TimeOn)
-		if err != nil {
-			t = time.Now().UTC()
-		}
-		view := dashboard.QSOView{
-			ID:        fmt.Sprintf("%d", q.ID),
-			TimeUTC:   t,
-			Call:      q.Call,
-			Band:      q.Band,
-			Mode:      q.Mode,
-			Submode:   q.Submode,
-			Frequency: fmt.Sprintf("%.3f MHz", q.Freq),
-			RSTSent:   q.RSTSent,
-			RSTRcvd:   q.RSTRcvd,
-			Grid:      q.GridSquare,
-			MyGrid:    q.MyGridSquare,
-			Country:   q.Country,
-			Operator:  q.Operator,
-		}
-		if q.Freq > 0 {
-			view.FrequencyHz = int64(q.Freq * 1_000_000)
-		}
-		views = append(views, view)
-	}
-	ds.SetRecent(views)
+	ds.SetRecent(dashboardViews(qsos))
 }
 
-// loadRecentFromDate loads up to <limit> QSOs with qso_date >= date,
-// ordered newest-first.
-func (m *Model) loadRecentFromDate(date string, limit int) ([]qso.QSO, error) {
+// loadRecentFromDate loads up to <limit> dashboard rows with qso_date >= date,
+// ordered newest-first. The dashboard renders fourteen columns, so it reads the
+// dashboard projection rather than complete QSO records: the full loader walks
+// notes, references and Wavelog bookkeeping that never reach the browser, and
+// this runs on the update path (up to 5000 rows at a time).
+func (m *Model) loadRecentFromDate(date string, limit int) ([]store.DashboardQSO, error) {
 	if m.App.DB == nil {
 		return nil, nil
 	}
-	return store.ListQSOsFromDate(m.App.DB, date, limit)
+	return store.ListDashboardQSOsFromDate(m.App.DB, date, limit)
 }
 
 func (m *Model) pushDashboardToday(ds *dashboard.State) {
@@ -1198,7 +1254,7 @@ func (m *Model) pushDashboardToday(ds *dashboard.State) {
 	}
 
 	// Load QSOs from minDate through today (capped at 5000).
-	qsos, err := store.ListQSOsFromDate(db, minDate, 5000)
+	qsos, err := store.ListDashboardQSOsFromDate(db, minDate, 5000)
 	if err != nil {
 		if !strings.Contains(err.Error(), "database is closed") {
 			applog.Debug("dashboard: cannot load QSOs from date", "minDate", minDate, "error", err)
@@ -1207,7 +1263,7 @@ func (m *Model) pushDashboardToday(ds *dashboard.State) {
 	}
 	// If today has very few QSOs (midnight crossing), also include yesterday.
 	if len(qsos) < 5 && minDate == today && yesterday > minDate {
-		yQsos, yErr := store.ListQSOsFromDate(db, yesterday, 5000)
+		yQsos, yErr := store.ListDashboardQSOsFromDate(db, yesterday, 5000)
 		if yErr == nil {
 			qsos = append(yQsos, qsos...)
 		}
@@ -1221,65 +1277,155 @@ func (m *Model) pushDashboardToday(ds *dashboard.State) {
 	}
 	lastTodayFP = fp
 
-	views := make([]dashboard.QSOView, 0, len(qsos))
-	for _, qs := range qsos {
-		t, err := time.Parse("20060102 150405", qs.QSODate+" "+qs.TimeOn)
-		if err != nil {
-			t = time.Now().UTC()
-		}
-		view := dashboard.QSOView{
-			ID:        fmt.Sprintf("%d", qs.ID),
-			TimeUTC:   t,
-			Call:      qs.Call,
-			Band:      qs.Band,
-			Mode:      qs.Mode,
-			Submode:   qs.Submode,
-			Frequency: fmt.Sprintf("%.3f MHz", qs.Freq),
-			RSTSent:   qs.RSTSent,
-			RSTRcvd:   qs.RSTRcvd,
-			Grid:      qs.GridSquare,
-			MyGrid:    qs.MyGridSquare,
-			Country:   qs.Country,
-			Operator:  qs.Operator,
-		}
-		if qs.Freq > 0 {
-			view.FrequencyHz = int64(qs.Freq * 1_000_000)
-		}
-		views = append(views, view)
-	}
 	// DB returns newest-first; JS expects newest-first (matching appendTodayQSO).
-	ds.SetToday(views)
-	applog.Debug("dashboard: pushed today QSOs", "count", len(views))
+	ds.SetToday(dashboardViews(qsos))
+	applog.Debug("dashboard: pushed today QSOs", "count", len(qsos))
 }
 
-// pushDashboardStats computes and pushes aggregate stats from the event
-// start date (or today if not configured) to the dashboard.
-func (m *Model) pushDashboardStats(ds *dashboard.State) {
-	if m.App.DB == nil {
-		return
+// dashboardStatsMsg carries one finished stats computation back to the update
+// loop. db, logbook and startDate identify the data set it was computed
+// against; revision is the data revision the totals belong to.
+type dashboardStatsMsg struct {
+	db      *sql.DB
+	logbook string
+	// startDate is the event-window start the totals were computed for, and
+	// revision the Model.qsoRev at that moment. Installing them into the cache
+	// is only correct if the logbook is still the same one.
+	startDate  string
+	revision   uint64
+	totals     store.DashboardTotals
+	rates      store.DashboardRates
+	totalsRead bool // true when this message actually recomputed the totals
+	stats      store.DashboardStats
+	err        error
+}
+
+// dashboardStatsCmd starts the stats refresh when it is due and no other
+// computation is running.
+//
+// The window totals (seven DISTINCT counts over the event window — 22 ms at
+// 10k contacts, ~300 ms at 100k) are only re-read when they can have changed:
+// a different database, a different event window (including the UTC rollover
+// that moves "today"), or a different data revision (save, WSJT-X log, edit,
+// delete, import, download, enrichment). Everything else about the panel — the
+// sliding 5/15/60-minute windows and how long ago the last contact was — moves
+// with the clock and is refreshed from the cached totals, which is what the
+// minute timer needs.
+//
+// It still runs as a command: the tick must not wait for SQLite.
+func (m *Model) dashboardStatsCmd() tea.Cmd {
+	if !m.http.statsDue || m.http.statsInFlight {
+		return nil
 	}
+	if m.App.DB == nil || m.http.client == nil || !m.http.online {
+		m.http.statsDue = false
+		return nil
+	}
+	db := m.App.DB
+	logbook := m.App.LogbookName
 	startDate := m.eventStartDate()
 	if startDate == "" {
-		startDate = time.Now().UTC().Format("20060102")
+		startDate = dashboardNow().Format("20060102")
 	}
-	s, err := store.GetDashboardStats(m.App.DB, startDate)
-	if err != nil {
-		applog.Debug("dashboard: cannot compute stats", "error", err)
-		return
+	rev := m.qsoRev
+
+	// Decide on the update loop, from the loop's own copy of the cache: the
+	// worker must not read model state.
+	cache := m.http.statsTotals
+	reuse := cache.valid && cache.db == db && cache.logbook == logbook &&
+		cache.startDate == startDate && cache.revision == rev
+
+	m.http.statsDue = false
+	m.http.statsInFlight = true
+	cachedTotals := cache.totals
+	return func() tea.Msg {
+		msg := dashboardStatsMsg{
+			db:        db,
+			logbook:   logbook,
+			startDate: startDate,
+			revision:  rev,
+		}
+		now := dashboardNow()
+		if reuse {
+			msg.totals = cachedTotals
+		} else {
+			totals, err := store.GetDashboardTotals(db, startDate)
+			if err != nil {
+				msg.err = err
+				return msg
+			}
+			msg.totals = totals
+			msg.totalsRead = true
+		}
+		rates, err := store.GetDashboardRates(db, now)
+		if err != nil {
+			msg.err = err
+			return msg
+		}
+		rates.LastQSOAgoS = msg.totals.ElapsedSeconds(now)
+		msg.rates = rates
+		msg.stats = store.DashboardStats{
+			QSOsToday:   msg.totals.QSOsToday,
+			Operators:   msg.totals.Operators,
+			UniqueCalls: msg.totals.UniqueCalls,
+			DXCC:        msg.totals.DXCC,
+			Grids:       msg.totals.Grids,
+			Bands:       msg.totals.Bands,
+			Modes:       msg.totals.Modes,
+			LastQSOAgoS: rates.LastQSOAgoS,
+			Rate5m:      rates.Rate5m,
+			Rate15m:     rates.Rate15m,
+			Rate60m:     rates.Rate60m,
+		}
+		return msg
 	}
-	ds.SetStats(dashboard.Stats{
-		QSOsToday:   s.QSOsToday,
-		Operators:   s.Operators,
-		UniqueCalls: s.UniqueCalls,
-		DXCC:        s.DXCC,
-		Grids:       s.Grids,
-		Bands:       s.Bands,
-		Modes:       s.Modes,
-		LastQSOAgoS: s.LastQSOAgoS,
-		Rate5m:      s.Rate5m,
-		Rate15m:     s.Rate15m,
-		Rate60m:     s.Rate60m,
+}
+
+// applyDashboardStats installs a finished computation. A result computed for a
+// logbook the operator already left is dropped — its aggregates describe a
+// different database — and the new logbook is marked due again so it gets its
+// own numbers on the next tick.
+func (m *Model) applyDashboardStats(msg dashboardStatsMsg) tea.Cmd {
+	m.http.statsInFlight = false
+	if msg.err != nil {
+		if !strings.Contains(msg.err.Error(), "database is closed") {
+			applog.Debug("dashboard: cannot compute stats", "error", msg.err)
+		}
+		return nil
+	}
+	if m.App.DB != msg.db || m.App.LogbookName != msg.logbook {
+		m.http.statsDue = true
+		return nil
+	}
+	// Cache the totals the message was built from, so the next minute only
+	// re-reads the rates. A reused-totals message refreshes the revision it was
+	// valid for (still current, or the next cmd would have recomputed) and a
+	// freshly read one records what it actually covers.
+	m.http.statsTotals = statsTotalsCache{
+		valid:     true,
+		db:        msg.db,
+		logbook:   msg.logbook,
+		startDate: msg.startDate,
+		revision:  msg.revision,
+		totals:    msg.totals,
+	}
+	if m.http.client == nil || !m.http.online {
+		return nil
+	}
+	m.http.client.State().SetStats(dashboard.Stats{
+		QSOsToday:   msg.stats.QSOsToday,
+		Operators:   msg.stats.Operators,
+		UniqueCalls: msg.stats.UniqueCalls,
+		DXCC:        msg.stats.DXCC,
+		Grids:       msg.stats.Grids,
+		Bands:       msg.stats.Bands,
+		Modes:       msg.stats.Modes,
+		LastQSOAgoS: msg.stats.LastQSOAgoS,
+		Rate5m:      msg.stats.Rate5m,
+		Rate15m:     msg.stats.Rate15m,
+		Rate60m:     msg.stats.Rate60m,
 	})
+	return nil
 }
 
 // pushDashboardAPRS reads recent APRS stations from the cache and pushes them

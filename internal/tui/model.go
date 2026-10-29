@@ -168,6 +168,10 @@ type Model struct {
 	// HTTP — built-in HTTP server for CQOps Live dashboard.
 	http httpState
 
+	// DXCC backfill — missing entities resolved from the callsign prefix,
+	// batched off the update loop.
+	backfill dxccBackfillState
+
 	// GPS — serial NMEA receiver for position tracking.
 	gps gpsState
 
@@ -214,6 +218,11 @@ type Model struct {
 
 	// Contest stats panel — computed from DB, refreshed every few seconds.
 	contest contestStats
+
+	// qsoRev counts QSO data changes (see qsoDataChanged). The contest panel
+	// re-reads the contest history only when this moves, so an idle logbook
+	// costs a few prefix scans per tick instead of a full re-read.
+	qsoRev uint64
 }
 
 type tickMsg time.Time
@@ -392,13 +401,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	// Kitty graphics: force-enable before model creation (mode locks at
 	// construction).  The General → Kitty graphics checkbox is the
 	// master switch; env vars only take effect when it is on.
-	// Recognises: kitty (KITTY_WINDOW_ID), Ghostty (TERM=xterm-ghostty,
-	// GHOSTTY_RESOURCES_DIR), WezTerm, and the NTCHARTS_KITTY override.
-	if a.Config.General.KittyGraphics &&
-		(os.Getenv("NTCHARTS_KITTY") == "supported" ||
-			os.Getenv("KITTY_WINDOW_ID") != "" ||
-			strings.HasPrefix(os.Getenv("TERM"), "xterm-ghostty") ||
-			os.Getenv("GHOSTTY_RESOURCES_DIR") != "") {
+	if a.Config.General.KittyGraphics && kittyForceCapable() {
 		picture.ForceKittyCapability(picture.KittyCapabilitySupported)
 	}
 
@@ -407,14 +410,18 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		UserAgent:  "CQOps/1.0 (ham-radio-logger)",
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
 		KittyID:    43, // full-screen F2 viewer
+		// ntcharts v2.4+ letterboxes Kitty images by default (FitContain);
+		// CQOps has always drawn the photo to fill its box.
+		Fit: picture.FitFill,
 	})
 	m.photo.partnerPicViewer = pictureurl.NewWithConfig(pictureurl.Config{
 		CacheLimit: 4,
 		UserAgent:  "CQOps/1.0 (ham-radio-logger)",
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
 		KittyID:    44, // inline partner photo — distinct from F2 viewer
+		Fit:        picture.FitFill,
 	})
-	applog.Info("Photo viewer: ready (Kitty graphics: experimental — requires Kitty, Ghostty, or WezTerm)",
+	applog.Info("Photo viewer: ready (Kitty graphics: experimental — requires a terminal with Unicode placeholders, e.g. kitty or Ghostty)",
 		"kitty_cap", m.photo.viewer.KittySupported(),
 		"mode", m.photo.viewer.Mode())
 
@@ -551,7 +558,78 @@ func (m *Model) ensureMapKitty() tea.Cmd {
 		m.psk.view = ""
 		return m.mapView.SetKittyEnabled(true)
 	}
+	// Configured on, but Kitty mode never engaged (probe unanswered, or the
+	// terminal is not one we can vouch for): say so once instead of quietly
+	// drawing the half-block map forever.
+	if picture.KittySupported() != picture.KittyCapabilitySupported {
+		m.mapView.NoteKittyBlocked()
+	}
 	return nil
+}
+
+// kittyPlaceholdersUnsupported reports whether the terminal is known to lack
+// the Kitty graphics protocol's Unicode-placeholder mechanism (`U=1`).
+//
+// Every picture model in ntcharts places its image with U=1: the image is
+// transmitted once, and the terminal is expected to paint it over the cells that
+// hold U+10EEEE placeholders, whose foreground colour carries the image id and
+// whose combining marks carry the row and column. A terminal that renders images
+// but ignores the placeholders therefore draws a grid of tofu boxes where the
+// picture should be, and the image itself lands wherever the transmit's own
+// placement put it.
+//
+// WezTerm is such a terminal today: wezterm/wezterm#7807 ("Kitty Unicode
+// Rendering Weird Behaviour") is open and unicode placeholders are only a draft
+// pull request (#7924). Verified on 2026-10-28 with two builds in the same
+// WezTerm window — one from before the ntcharts v2.2.0 → v2.8.0 bump and one
+// after — both drew the placeholder grid as green boxes and the map image in a
+// stray strip, so this is the terminal, not the library.
+//
+// NTCHARTS_KITTY=supported overrides the exclusion for a patched build.
+func kittyPlaceholdersUnsupported() bool {
+	if os.Getenv("NTCHARTS_KITTY") == "supported" {
+		return false
+	}
+	if os.Getenv("WEZTERM_EXECUTABLE") != "" || os.Getenv("WEZTERM_PANE") != "" {
+		return true
+	}
+	return os.Getenv("TERM_PROGRAM") == "WezTerm"
+}
+
+// kittyForceCapable reports whether the terminal is one of the implementations
+// known to render the Kitty graphics protocol properly, so the capability can be
+// declared at startup instead of probed. ntcharts blocks the switch into Kitty
+// mode until its 250 ms probe is answered, so a terminal that never answers — a
+// multiplexer that drops the query, a reply that arrives before the input
+// reader is up — silently keeps the half-block fallback forever. The ones we
+// can vouch for skip the probe; NTCHARTS_KITTY=supported forces it for
+// anything else.
+//
+// iTerm2 is deliberately absent: kittyTerminalEnv recognises it so the probe may
+// try, but its Kitty support is partial and the half-block map is the safer
+// default there.
+func kittyForceCapable() bool {
+	if kittyPlaceholdersUnsupported() {
+		return false
+	}
+	if os.Getenv("NTCHARTS_KITTY") == "supported" {
+		return true
+	}
+	if os.Getenv("KITTY_WINDOW_ID") != "" || os.Getenv("KITTY_INSTALLATION_DIR") != "" {
+		return true
+	}
+	if os.Getenv("GHOSTTY_RESOURCES_DIR") != "" {
+		return true
+	}
+	switch os.Getenv("TERM") {
+	case "xterm-kitty", "xterm-ghostty":
+		return true
+	}
+	switch os.Getenv("TERM_PROGRAM") {
+	case "kitty", "ghostty":
+		return true
+	}
+	return false
 }
 
 // kittyTerminalEnv reports whether the current terminal is known to
@@ -559,6 +637,17 @@ func (m *Model) ensureMapKitty() tea.Cmd {
 // Used as a guard to prevent ntcharts from activating Kitty on
 // terminals like Konsole that may accidentally pass the probe.
 func kittyTerminalEnv() bool {
+	// An explicit opt-in overrides the guesswork: it is also what
+	// kittyForceCapable honours, and forcing the capability while this gate
+	// says no would leave the mode switch permanently blocked.
+	if os.Getenv("NTCHARTS_KITTY") == "supported" {
+		return true
+	}
+	// A terminal that cannot place the image over its placeholder cells would
+	// draw tofu where the map belongs — keep it on the half-block path.
+	if kittyPlaceholdersUnsupported() {
+		return false
+	}
 	if os.Getenv("KITTY_WINDOW_ID") != "" || os.Getenv("KITTY_INSTALLATION_DIR") != "" {
 		return true
 	}
@@ -1183,10 +1272,8 @@ func (m *Model) View() tea.View {
 		m.rc.lastLayoutSc = m.screen
 	}
 
-	if layout.TerminalW < 75 || layout.TerminalH < 24 {
-		msg := fmt.Sprintf("\n  CQOps — Terminal too small: %dx%d (min 75x24)\n\n  Press F10 and then Enter to quit",
-			layout.TerminalW, layout.TerminalH)
-		return tea.NewView(ErrorStyle.Render(msg))
+	if layout.TerminalW < minTermW || layout.TerminalH < minTermH {
+		return tea.NewView(refusalView(layout.TerminalW, layout.TerminalH))
 	}
 
 	// Render fixed bars.
@@ -1634,8 +1721,9 @@ func (m *Model) buildContestLine(boxW int) string {
 		m.rc.contestLineSig = ""
 		return ""
 	}
-	// Keep stats current — computeIfStale is a no-op when fresh (<5 s).
-	m.contest.computeIfStale(m.App.DB, id, ct.Name)
+	// Keep stats current — computeIfStale is a no-op when fresh (<5 s), and it
+	// only re-reads the contest when the QSO revision moved.
+	m.contest.computeIfStale(m.App.DB, id, ct.Name, m.qsoRev)
 	sig := id + "|" + strconv.Itoa(ct.NextQSO) + "|" + strconv.Itoa(m.contest.TotalQSOs) + "|" + strconv.FormatInt(time.Now().UTC().Unix()/10, 10) + "|" + strconv.Itoa(boxW) + "|" + strconv.FormatInt(int64(m.contest.OnAir.Seconds()), 10)
 	if m.rc.contestLineSig == sig && m.rc.contestLine != "" {
 		return m.rc.contestLine

@@ -18,9 +18,12 @@ if command -v jq &>/dev/null; then
      .RT_VERSION."#1"."0000".info."0409".ProductVersion = $v3' \
     winres/winres.json > winres/winres.json.tmp && mv winres/winres.json.tmp winres/winres.json
 fi
-# Regenerate .syso if go-winres is available
+# Regenerate .syso if go-winres is available. Run from the repo root: the tool
+# reads winres/winres.json relative to the working directory and must write the
+# objects next to the binary (--out), otherwise the Windows build keeps the
+# previously committed resources.
 if command -v go-winres &>/dev/null; then
-  (cd winres && go-winres make)
+  go-winres make --arch amd64,386 --out cmd/cqops/rsrc
 fi
 
 LDFLAGS="-s -w -X github.com/szporwolik/cqops/internal/version.Version=${VERSION} -X github.com/szporwolik/cqops/internal/version.Commit=${COMMIT} -X github.com/szporwolik/cqops/internal/version.BuildDate=${BUILD_DATE}"
@@ -44,9 +47,21 @@ done
 
 echo "Done. Binaries in $BUILD_DIR/"
 
-# Install to GOPATH/bin (if --install flag passed)
+# Install to GOBIN when it is set, otherwise GOPATH/bin (if --install passed)
 if [[ "${1:-}" == "--install" ]]; then
   echo "Installing cqops ${VERSION}..."
   CGO_ENABLED=0 go install -ldflags="$LDFLAGS" ./cmd/cqops
-  echo "Installed to $(go env GOPATH)/bin/cqops"
+  # `go install` respects GOBIN, so asking go for the destination is the only
+  # way to report (and check) the file it actually wrote. Without GOBIN it
+  # falls back to the FIRST entry of a multi-directory GOPATH.
+  install_dir="$(go env GOBIN)"
+  if [[ -z "$install_dir" ]]; then
+    gopath="$(go env GOPATH)"
+    install_dir="${gopath%%:*}/bin"
+  fi
+  if [[ ! -x "$install_dir/cqops" ]]; then
+    echo "error: go install finished but $install_dir/cqops is missing" >&2
+    exit 1
+  fi
+  echo "Installed to $install_dir/cqops"
 fi

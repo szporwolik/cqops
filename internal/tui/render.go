@@ -123,15 +123,25 @@ func scrollVpToLine(vp *viewport.Model, line int) {
 // fillBody returns the content with trailing newlines so the total height
 // equals contentH. Each trailing line carries a single space to force
 // Bubble Tea's render diff to write to every line.
+//
+// The content is newline-terminated first: appending the pattern to a body that
+// does not end with a newline glued the first filler space onto the last real
+// line ("…│ " instead of "…│"), which made that line one cell wider than the
+// panel and — because lipgloss pads every rendered line to the widest one — the
+// whole frame one cell wider than the terminal.
 func fillBody(content string, contentH int) string {
 	if contentH <= 0 {
 		return content
 	}
-	current := lipgloss.Height(content)
+	terminated := content
+	if !strings.HasSuffix(terminated, "\n") {
+		terminated += "\n"
+	}
+	current := lipgloss.Height(terminated)
 	if current >= contentH {
 		return content
 	}
-	return content + strings.Repeat(" \n", contentH-current)
+	return terminated + strings.Repeat(" \n", contentH-current)
 }
 
 // padOrTrunc returns s truncated or padded with spaces to exactly w cells.

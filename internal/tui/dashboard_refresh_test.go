@@ -134,31 +134,39 @@ func TestDashboardRecentRepaintsAfterFieldOnlyChange(t *testing.T) {
 }
 
 // TestPanelFingerprintTracksRenderedFields documents which changes must
-// invalidate a panel and which must not.
+// invalidate a panel and which must not. The fingerprint reads the dashboard
+// projection, so anything the panels render has to live in that projection —
+// this table is what keeps the two in step.
 func TestPanelFingerprintTracksRenderedFields(t *testing.T) {
-	base := []qso.QSO{{ID: 7, Call: "DJ7NT", Band: "20m", Mode: "FT8", Country: ""}}
+	base := []store.DashboardQSO{{ID: 7, Call: "DJ7NT", Band: "20m", Mode: "FT8", Country: ""}}
 	fp := newPanelFingerprint(base)
 	if fp.equal(panelFingerprint{}) {
 		t.Error("an unset fingerprint must never match (forced push spelling)")
 	}
-	if !fp.equal(newPanelFingerprint([]qso.QSO{{ID: 7, Call: "DJ7NT", Band: "20m", Mode: "FT8", Country: ""}})) {
+	if !fp.equal(newPanelFingerprint([]store.DashboardQSO{{ID: 7, Call: "DJ7NT", Band: "20m", Mode: "FT8", Country: ""}})) {
 		t.Error("identical data must produce an equal fingerprint")
 	}
 
-	changes := map[string]qso.QSO{
-		"country": {ID: 7, Call: "DJ7NT", Band: "20m", Mode: "FT8", Country: "Poland"},
-		"grid":    {ID: 7, Call: "DJ7NT", Band: "20m", Mode: "FT8", GridSquare: "JO90"},
-		"mode":    {ID: 7, Call: "DJ7NT", Band: "20m", Mode: "SSB"},
+	changes := map[string]store.DashboardQSO{
+		"country":  {ID: 7, Call: "DJ7NT", Band: "20m", Mode: "FT8", Country: "Poland"},
+		"grid":     {ID: 7, Call: "DJ7NT", Band: "20m", Mode: "FT8", GridSquare: "JO90"},
+		"my grid":  {ID: 7, Call: "DJ7NT", Band: "20m", Mode: "FT8", MyGridSquare: "KO00"},
+		"mode":     {ID: 7, Call: "DJ7NT", Band: "20m", Mode: "SSB"},
+		"submode":  {ID: 7, Call: "DJ7NT", Band: "20m", Mode: "MFSK", Submode: "FT4"},
+		"rst sent": {ID: 7, Call: "DJ7NT", Band: "20m", Mode: "FT8", RSTSent: "-10"},
+		"freq":     {ID: 7, Call: "DJ7NT", Band: "20m", Mode: "FT8", Freq: 14.0745},
+		"date":     {ID: 7, Call: "DJ7NT", Band: "20m", Mode: "FT8", QSODate: "20261028"},
+		"time":     {ID: 7, Call: "DJ7NT", Band: "20m", Mode: "FT8", TimeOn: "120000"},
 		"operator": {ID: 7, Call: "DJ7NT", Band: "20m", Mode: "FT8",
 			Operator: "SP9MOA"},
 	}
 	for name, changed := range changes {
-		if fp.equal(newPanelFingerprint([]qso.QSO{changed})) {
+		if fp.equal(newPanelFingerprint([]store.DashboardQSO{changed})) {
 			t.Errorf("%s change did not invalidate the fingerprint", name)
 		}
 	}
 
-	if fp.equal(newPanelFingerprint([]qso.QSO{{ID: 8, Call: "DJ7NT", Band: "20m", Mode: "FT8"}})) {
+	if fp.equal(newPanelFingerprint([]store.DashboardQSO{{ID: 8, Call: "DJ7NT", Band: "20m", Mode: "FT8"}})) {
 		t.Error("a different row id did not invalidate the fingerprint")
 	}
 }

@@ -24,10 +24,12 @@ type LogViewer struct {
 	logName  string // active logbook name for display
 
 	// Content cache — avoids rebuilding all log lines on every frame.
+	// Keyed on the buffer revision: the ring keeps only the newest entries, so
+	// the stored count stops moving once it is full while entries keep arriving.
 	cachedContent string
 	cachedW       int
 	cachedH       int
-	cachedEntries int
+	cachedRev     uint64
 }
 
 func NewLogViewer(logName string) *LogViewer {
@@ -76,7 +78,7 @@ func (lv *LogViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			lv.done = true
 		case "insert":
 			lv.viewport.SetYOffset(0)
-			lv.cachedContent = ""
+
 		default:
 			var cmd tea.Cmd
 			lv.viewport, cmd = lv.viewport.Update(msg)
@@ -84,6 +86,15 @@ func (lv *LogViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return lv, nil
+}
+
+// needsRebuild reports whether the viewport content has to be rebuilt for the
+// given buffer revision and geometry. It is the revision that changes, not the
+// number of stored entries: the ring keeps the newest maxStored entries, so once
+// it is full the count stays put while new entries keep arriving — a cache keyed
+// on the count never refreshes again.
+func (lv *LogViewer) needsRebuild(rev uint64, w, h int) bool {
+	return lv.cachedContent == "" || lv.cachedRev != rev || lv.cachedW != w || lv.cachedH != h
 }
 
 func (lv *LogViewer) View() tea.View {
@@ -103,16 +114,17 @@ func (lv *LogViewer) View() tea.View {
 		lv.viewport.SetHeight(vh)
 	}
 
-	entries := applog.Entries()
+	// Return the cached view when neither the buffer nor the geometry changed.
+	// SetContent is deliberately not repeated here: the viewport already holds
+	// these lines, and re-setting them only resets its highlight state.
+	if !lv.needsRebuild(applog.Revision(), lv.width, vh) {
+		return tea.NewView(lv.viewport.View())
+	}
+
+	entries, rev := applog.EntriesWithRevision()
 	entryCount := len(entries)
 	if entryCount == 0 {
 		return tea.NewView(DimStyle.Render("  No log entries yet."))
-	}
-
-	// Return cached view if nothing changed.
-	if lv.cachedW == lv.width && lv.cachedH == vh && lv.cachedEntries == entryCount && lv.cachedContent != "" {
-		lv.viewport.SetContent(lv.cachedContent)
-		return tea.NewView(lv.viewport.View())
 	}
 
 	// Build colored log lines (newest first).
@@ -158,7 +170,7 @@ func (lv *LogViewer) View() tea.View {
 	lv.cachedContent = content
 	lv.cachedW = lv.width
 	lv.cachedH = vh
-	lv.cachedEntries = entryCount
+	lv.cachedRev = rev
 
 	return tea.NewView(lv.viewport.View())
 }

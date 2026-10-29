@@ -395,17 +395,29 @@ func (le *LogbookEditor) SetQSOS(qsos []qso.QSO) {
 }
 
 // SetContestID sets the active contest filter for the editor.
-// Pass "" to clear the filter and show all QSOs.
-func (le *LogbookEditor) SetContestID(id, name, adifID, date string) {
-	if le.contestID != id {
-		le.contestID = id
-		le.contestName = name
-		le.contestAdifID = adifID
-		le.contestDate = date
-		le.cachedSig = ""
-		le.currentPage = 1
-		le.loadPage()
+// Pass "" to clear the filter and show all QSOs. The first page of the new
+// filter is read; a failure is logged and reported by the caller, and the
+// previous page stays on screen instead of a blank table.
+func (le *LogbookEditor) SetContestID(id, name, adifID, date string) error {
+	if le.contestID == id {
+		return nil
 	}
+	prevID, prevName, prevAdif, prevDate := le.contestID, le.contestName, le.contestAdifID, le.contestDate
+	prevPage := le.currentPage
+	le.contestID = id
+	le.contestName = name
+	le.contestAdifID = adifID
+	le.contestDate = date
+	le.cachedSig = ""
+	le.currentPage = 1
+	if err := le.loadPage(); err != nil {
+		// Nothing was installed, so the filter line must not claim a filter the
+		// list under it does not show.
+		le.contestID, le.contestName, le.contestAdifID, le.contestDate = prevID, prevName, prevAdif, prevDate
+		le.currentPage = prevPage
+		return err
+	}
+	return nil
 }
 
 // SetContestMode enables or disables contest column mode (ExchSent/ExchRcvd
@@ -435,46 +447,68 @@ func (le *LogbookEditor) SetMultiOp(v bool) {
 }
 
 // loadPage fetches the current page of QSOs from the database.
-func (le *LogbookEditor) loadPage() {
+//
+// Nothing is installed until the query returns: the page size, the page number,
+// the count and the rows are computed in locals and committed together. A
+// failed read used to assign an empty row set, so a transient database problem
+// blanked the table and the operator could not tell "this logbook is empty"
+// from "the read failed". On error the previous page stays exactly as it was —
+// same rows, same page number, same cursor — and the error is returned so the
+// caller can report it; the next successful load replaces everything.
+func (le *LogbookEditor) loadPage() error {
 	if le.db == nil {
-		return
+		return nil
 	}
 	// During an active search the table shows the whole-logbook result set;
 	// page loads (resize, page keys) must not blow it away.
 	if le.searchQuery != "" {
-		return
-	}
-	// Determine page size from current terminal height.
-	h := le.height
-	if h < 10 {
-		h = 24
-	}
-	// pageSize = data rows visible = tableH - 1 header row.
-	le.pageSize = h - 9
-	if le.pageSize < 5 {
-		le.pageSize = 5
+		return nil
 	}
 
-	// Fetch page data and total count in a single query via COUNT(*) OVER().
-	totalPages := le.totalPages()
-	if totalPages < 1 {
-		totalPages = 1
+	size := le.pageSizeForHeight()
+	page := le.currentPage
+	if page < 1 {
+		page = 1
 	}
-	if le.currentPage < 1 {
-		le.currentPage = 1
-	}
-	if le.currentPage > totalPages {
-		le.currentPage = totalPages
+	// Clamped against the count from the previous load: the clamp must not be
+	// installed before the read succeeds, or a failed load would leave the
+	// operator on a page that is not the one on screen.
+	if last := pagesFor(le.totalCount, size); page > last {
+		page = last
 	}
 
-	offset := (le.currentPage - 1) * le.pageSize
-	qsos, total, err := store.ListQSOsPageWithCount(le.db, le.pageSize, offset, le.contestID)
+	qsos, total, err := store.ListQSOsPageWithCount(le.db, size, (page-1)*size, le.contestID)
 	if err != nil {
-		le.qsos = nil
-	} else {
-		le.qsos = qsos
-		le.totalCount = total
+		applog.Error("LogbookEditor: cannot read page", "page", page, "error", err.Error())
+		return err
 	}
+
+	// The count from this read decides whether the page still exists. Deleting
+	// the last contact of the last page leaves the page number one past the new
+	// end, and the clamp above could only use the count from the previous load —
+	// so 21 contacts on 20-row pages became an empty "page 2/1" while 20 contacts
+	// were still in the logbook. Re-read the last page that does exist and
+	// install that instead of the empty one. Bounded: every pass uses the count
+	// it just read, and a logbook emptied meanwhile lands on page 1.
+	read := func(p int) ([]qso.QSO, int, error) {
+		return store.ListQSOsPageWithCount(le.db, size, (p-1)*size, le.contestID)
+	}
+	for attempt := 0; attempt < 3 && len(qsos) == 0 && page > 1; attempt++ {
+		last := pagesFor(total, size)
+		if page <= last {
+			break
+		}
+		page = last
+		if qsos, total, err = read(page); err != nil {
+			applog.Error("LogbookEditor: cannot read page", "page", page, "error", err.Error())
+			return err
+		}
+	}
+
+	le.pageSize = size
+	le.currentPage = page
+	le.qsos = qsos
+	le.totalCount = total
 
 	// Pre-format row cells once per page load — buildTable() reuses this
 	// cache instead of calling editorColValue() for every cell on every
@@ -482,6 +516,176 @@ func (le *LogbookEditor) loadPage() {
 	le.formattedRows = nil
 	le.cachedSig = ""
 	le.buildTable()
+	return nil
+}
+
+// pageSizeForHeight is how many contacts fit on one page at the current
+// terminal height: the table height minus its header row.
+func (le *LogbookEditor) pageSizeForHeight() int {
+	h := le.height
+	if h < 10 {
+		h = 24
+	}
+	size := h - 9
+	if size < 5 {
+		size = 5
+	}
+	return size
+}
+
+// anchorIndex is the absolute (0-based) position of the selected contact in the
+// list the pages are cut from — the row the operator is looking at.
+func (le *LogbookEditor) anchorIndex() int {
+	if le.pageSize < 1 {
+		return 0
+	}
+	idx := (le.currentPage-1)*le.pageSize + le.table.Cursor()
+	if idx < 0 {
+		idx = 0
+	}
+	if le.totalCount > 0 && idx >= le.totalCount {
+		idx = le.totalCount - 1
+	}
+	return idx
+}
+
+// loadPageAt fetches the page that contains the absolute row `anchor` and puts
+// the cursor back on it, so paging that is driven by a row (rather than a page
+// number) lands on the contact the caller means.
+func (le *LogbookEditor) loadPageAt(anchor int) error {
+	if le.db == nil || le.searchQuery != "" {
+		return nil
+	}
+	if le.pageSize < 1 {
+		le.pageSize = le.pageSizeForHeight()
+	}
+	if anchor < 0 {
+		anchor = 0
+	}
+	prevPage := le.currentPage
+	le.currentPage = anchor/le.pageSize + 1
+	// loadPage recomputes the size, clamps the page and rebuilds the table.
+	if err := le.loadPage(); err != nil {
+		le.currentPage = prevPage // the rows on screen are still that page's
+		return err
+	}
+	le.cursorOn(anchor)
+	return nil
+}
+
+// cursorOn puts the table cursor on the absolute row `anchor`, which must be on
+// the page that is currently loaded. buildTable() replaces the table (and its
+// cursor) on every rebuild, so anything that rebuilds it has to call this.
+func (le *LogbookEditor) cursorOn(anchor int) {
+	n := len(le.qsos)
+	if n == 0 || le.pageSize < 1 {
+		return
+	}
+	row := anchor - (le.currentPage-1)*le.pageSize
+	if row < 0 {
+		row = 0
+	}
+	if row >= n {
+		row = n - 1
+	}
+	le.table.SetCursor(row)
+	le.cachedSig = ""
+}
+
+// selectedQSOID is the id of the contact under the cursor (0 when the list is
+// empty or the cursor sits outside it).
+func (le *LogbookEditor) selectedQSOID() int64 {
+	row := le.table.Cursor()
+	if row < 0 || row >= len(le.qsos) {
+		return 0
+	}
+	return le.qsos[row].ID
+}
+
+// selectQSOID puts the cursor on the contact with this id and reports whether
+// the loaded list holds it.
+func (le *LogbookEditor) selectQSOID(id int64) bool {
+	if id == 0 {
+		return false
+	}
+	for i := range le.qsos {
+		if le.qsos[i].ID == id {
+			le.table.SetCursor(i)
+			le.cachedSig = ""
+			return true
+		}
+	}
+	return false
+}
+
+// restoreSelection puts the cursor back on the contact a resize was anchored on.
+// The loaded rows are tried first — the usual case, where the contact only moved
+// a row or two because a newer one was appended. When it is not there (it crossed
+// a page boundary) its position is derived from the database. A contact that no
+// longer exists leaves the clamped position `anchor` selected, which is what a
+// resize did before the selection was anchored on anything.
+func (le *LogbookEditor) restoreSelection(anchor int, id int64) error {
+	le.cursorOn(anchor)
+	if le.selectQSOID(id) {
+		return nil
+	}
+	return le.refocusOnID(id)
+}
+
+// refocusOnID loads the page that holds the contact now. No-op when there is no
+// contact, no database, or an active search — a search result is not paged and
+// a resize does not re-read it.
+func (le *LogbookEditor) refocusOnID(id int64) error {
+	if id == 0 || le.db == nil || le.searchQuery != "" {
+		return nil
+	}
+	rank, found, err := store.QSORank(le.db, id, le.contestID)
+	if err != nil || !found {
+		return err
+	}
+	if err := le.loadPageAt(rank); err != nil {
+		return err
+	}
+	if le.selectQSOID(id) {
+		return nil
+	}
+	// The page number was clamped against the count from the previous page
+	// load, which a growing log has already outgrown; the load above refreshed
+	// it, so the rank's own page is reachable now.
+	if err := le.loadPageAt(rank); err != nil {
+		return err
+	}
+	le.selectQSOID(id)
+	return nil
+}
+
+// repageAfterResize re-reads the current page at the new geometry, keeping the
+// contact at absolute row `anchor` selected. The page number alone cannot
+// survive a resize: page N of p-row pages starts at row (N-1)*p, so at a
+// different page size it points at an unrelated contact — enlarging the window
+// after page 2 jumped from contact 71 to contact 38. The row is only a hint:
+// `id` is the contact that was selected, and it wins whenever the list still
+// holds it.
+func (le *LogbookEditor) repageAfterResize(anchor int, id int64) error {
+	size := le.pageSizeForHeight()
+	if size == le.pageSize {
+		// Width only: the same rows are still on screen, but the table was rebuilt
+		// for the new columns, so the cursor has to go back.
+		return le.restoreSelection(anchor, id)
+	}
+	prevSize, prevPage := le.pageSize, le.currentPage
+	le.pageSize = size
+	if err := le.loadPageAt(anchor); err != nil {
+		le.pageSize, le.currentPage = prevSize, prevPage
+		// The caller already rebuilt the table for the new width, which resets
+		// its cursor; the rows on screen are still the previous page's, so put
+		// the selection back where it was instead of moving it to the top. No
+		// database retry here — the read just failed.
+		le.cursorOn(anchor)
+		le.selectQSOID(id)
+		return err
+	}
+	return le.restoreSelection(anchor, id)
 }
 
 // isDownloadActive returns true when a Wavelog download is in progress.
@@ -505,20 +709,20 @@ func (le *LogbookEditor) dbLease(db *sql.DB) func() {
 // country, optionally scoped to the active contest filter. Synchronous —
 // used directly by tests; interactive typing goes through scheduleSearch,
 // which debounces and runs the query in a worker.
-func (le *LogbookEditor) applySearchFilter() {
+func (le *LogbookEditor) applySearchFilter() error {
 	if le.searchQuery == "" {
-		le.loadPage()
-		return
+		return le.loadPage()
 	}
 	if le.db == nil {
-		return
+		return nil
 	}
 	qsos, err := store.SearchQSOs(le.db, le.searchQuery, le.contestID, 500)
 	if err != nil {
 		applog.Error("LogbookEditor: search failed", "error", err)
-		return
+		return err
 	}
 	le.applySearchRows(qsos)
+	return nil
 }
 
 // applySearchRows installs a search result into the editor list and rebuilds
@@ -546,11 +750,11 @@ type searchDebounceMsg struct {
 // scheduleSearch runs after every search-text change. An empty query (or a
 // database-less editor) restores the paged view synchronously — the query is
 // indexed and cheap. Otherwise the full-logbook scan is debounced and then
-// run in a worker, so typing never blocks on a LIKE '%…%' table scan.
+// run in a worker, so typing never blocks on a LIKE '%…%' table scan. A failed
+// restore keeps the search result on screen and is reported as a toast.
 func (le *LogbookEditor) scheduleSearch() tea.Cmd {
 	if le.searchQuery == "" || le.db == nil {
-		le.applySearchFilter()
-		return nil
+		return editorErrorCmd(le.applySearchFilter())
 	}
 	le.searchGen++
 	gen := le.searchGen
@@ -577,18 +781,26 @@ func (le *LogbookEditor) searchWorkerCmd(gen uint64, query string) tea.Cmd {
 }
 
 func (le *LogbookEditor) totalPages() int {
-	if le.pageSize < 1 || le.totalCount < 1 {
+	return pagesFor(le.totalCount, le.pageSize)
+}
+
+// pagesFor is how many pages `total` contacts make at `size` rows per page.
+// Split out of totalPages so a page load can clamp the page number against the
+// new geometry without mutating the editor.
+func pagesFor(total, size int) int {
+	if size < 1 || total < 1 {
 		return 1
 	}
-	p := le.totalCount / le.pageSize
-	if le.totalCount%le.pageSize != 0 {
+	p := total / size
+	if total%size != 0 {
 		p++
 	}
 	return p
 }
 
-// goToPage navigates to the given page (1-indexed) and reloads data.
-func (le *LogbookEditor) goToPage(p int) {
+// goToPage navigates to the given page (1-indexed) and reloads data. A failed
+// read leaves the editor on the page it was showing and returns the error.
+func (le *LogbookEditor) goToPage(p int) error {
 	tp := le.totalPages()
 	if p < 1 {
 		p = 1
@@ -597,12 +809,17 @@ func (le *LogbookEditor) goToPage(p int) {
 		p = tp
 	}
 	if p == le.currentPage && len(le.qsos) > 0 {
-		return
+		return nil
 	}
+	prev := le.currentPage
 	le.currentPage = p
-	le.loadPage()
+	if err := le.loadPage(); err != nil {
+		le.currentPage = prev
+		return err
+	}
 	// Reset cursor to top of the new page.
 	le.table.SetCursor(0)
+	return nil
 }
 
 func (le *LogbookEditor) QSOCount() int { return len(le.qsos) }

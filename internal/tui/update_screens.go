@@ -801,15 +801,17 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		}
 	}
 
-	// Detect resize — pageSize depends on terminal height, so reload.
-	oldW, oldH := m.ui.logbookEditor.width, m.ui.logbookEditor.height
+	// The editor is told about the new geometry by the WindowSizeMsg itself, and
+	// it has to be the one that reacts: page size follows the height, so a
+	// resize must re-page around the selected contact (or, during a search,
+	// rebuild the table around it). Assigning the new size HERE first made the
+	// editor's own `msg.Width != le.width` check false, so the message looked
+	// like a no-op and the selection fell back to the top of the list — the
+	// anchored resize path existed but never ran in the running app.
+	_, editorCmd := m.ui.logbookEditor.Update(msg)
 	m.ui.logbookEditor.width = m.width
 	m.ui.logbookEditor.height = m.height
 	m.ui.logbookEditor.Offline = m.Offline || !m.inetOnline
-	if m.width != oldW || m.height != oldH {
-		m.ui.logbookEditor.needsReload = true
-	}
-	_, editorCmd := m.ui.logbookEditor.Update(msg)
 	var refreshCmd tea.Cmd
 	if em, ok := msg.(editorMsg); ok {
 		// Operation identity: a completion from a replaced editor (logbook
@@ -941,11 +943,16 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		}
 		// Download/import completion side effects (last_fetched_id
 		// persistence, QSO refresh flag, DXCC backfill, early errors).
-		m.handleEditorSideEffects(em)
+		if c := m.handleEditorSideEffects(em); c != nil {
+			cmd = tea.Batch(cmd, c)
+		}
 	}
 	if m.ui.logbookEditor.needsReload {
 		m.ui.logbookEditor.needsReload = false
-		m.ui.logbookEditor.loadPage()
+		if err := m.ui.logbookEditor.loadPage(); err != nil {
+			// The list keeps the page it is showing; say why it did not change.
+			m.toasts.Error("Logbook: " + err.Error())
+		}
 		m.needRefresh = true
 	}
 	if m.ui.logbookEditor.done {
@@ -1019,13 +1026,13 @@ func (m *Model) handleEditorSideEffects(em editorMsg) tea.Cmd {
 			m.invalidateDashboardFlags()
 			applog.Info("Wavelog: bulk import finished — QSO list refresh pending",
 				"inserted", em.dlCount, "dupes", em.dlDupes, "last_id", em.dlLastID)
-			// Full DXCC backfill after bulk import — the periodic
-			// 50-row sweep is too slow for 10K+ QSO downloads.
+			// Full DXCC backfill after bulk import — the periodic 50-row
+			// sweep is far too slow for a 10K+ QSO download, but draining
+			// the whole log here froze the interface for the length of the
+			// write. The pass runs in the background now, one at a time.
 			if m.App.BigCTY != nil && m.App.DB != nil {
-				n, err := backfillMissingDXCCLimit(m.App.DB, m.App.BigCTY, 0)
-				if err == nil && n > 0 {
-					applog.Info("DXCC: post-download backfill complete", "count", n)
-				}
+				m.backfill.fullPending = true
+				return m.dxccBackfillCmd(0)
 			}
 		}
 	} else if em.dlErr != "" {
