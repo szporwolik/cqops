@@ -164,7 +164,13 @@ const L = {
   map: () => makeMap(),
   layerGroup: () => makeLayerGroup(),
   marker: () => ({addTo() { return this; }, bindTooltip() { return this; }, bindPopup() { return this; }, on() {}, setLatLng() {}, getLatLng() { return {lat: 0, lng: 0}; }, remove() {}}),
-  circleMarker: () => { markerCount++; return {addTo() { return this; }, bindTooltip() { return this; }, bindPopup() { return this; }, on() {}, remove() {}}; },
+  circleMarker: () => { markerCount++; return {addTo() { return this; }, bindTooltip() { return this; }, bindPopup() { return this; }, on() {}, remove() {},
+    setLatLng() {}, getLatLng() { return {lat: 0, lng: 0}; }, setRadius() {}, setStyle() {},
+    bringToFront() {}, setOpacity() {}}; },
+  // The local map draws the APRS radius as an L.circle; the station handler
+  // calls it on every station event with a position.
+  circle: () => ({addTo() { return this; }, bringToFront() {}, setRadius() {},
+    setLatLng() {}, setStyle() {}, remove() {}}),
   polyline: () => ({addTo() { return this; }, setStyle() { return this; }, remove() {}}),
   divIcon: (o) => ({options: o}),
   icon: (o) => ({options: o}),
@@ -243,6 +249,53 @@ if (!hook) {
   process.exit(2);
 }
 
+// Optional second mode: drive the station card through its real SSE handlers
+// instead of the qso_logged handler. `node harness app.js station-card:<case>`.
+const SCENARIO = (process.argv[3] || '').replace(/^station-card:?/, '');
+
+// stationCard replays the event order the dashboard server produces and
+// reports the station card markup it ended up with. The payloads are the
+// values a live instance publishes: the station is listening on 80 m FT8 with
+// WSJT-X running, so a card that reports otherwise is wrong.
+function stationCard(scenario) {
+  const payloads = {
+    station: {callsign: 'HF50HSP', locator: 'KO00CA', radio: 'Xiegu DIGI (Xiegu G90)',
+              antenna: 'HWEF 20.5m', powerW: 20, lat: 50.0, lon: 20.0,
+              aprsLocator: 'KO00CA67LW', aprsRadiusKm: 50},
+    operator: {callsign: 'SP9SPM', name: 'Szymon'},
+    logbook: {name: 'HF50HSP'},
+    rig: {enabled: true, connected: true, frequency: '3.573 MHz', band: '80m', mode: 'FT8'},
+    wsjtx: {enabled: true, connected: true},
+  };
+  // A station event fires every couple of seconds; the last one must not undo
+  // what the rig/wsjtx/logbook events just put on the card.
+  const order = scenario === 'station-first'
+    ? ['station', 'station', 'rig', 'wsjtx', 'operator', 'logbook']
+    : ['rig', 'wsjtx', 'operator', 'logbook', 'station', 'station'];
+
+  const es = sseHandlers[sseHandlers.length - 1] || {};
+  order.forEach(function (name) {
+    const handlers = es[name] || [];
+    if (!handlers.length) throw new Error('app.js registered no ' + name + ' handler');
+    handlers.forEach(function (fn) {
+      fn({data: JSON.stringify({payload: payloads[name]})});
+    });
+  });
+
+  const html = getEl('station-fields').innerHTML;
+  return {
+    scenario: scenario,
+    html: html,
+    rigConnected: html.indexOf('</span> Connected') >= 0,
+    rigDisconnected: html.indexOf('</span> Disconnected') >= 0,
+    wsjtxOnline: html.indexOf('</span> Online') >= 0,
+    wsjtxOffline: html.indexOf('</span> Offline') >= 0,
+    hasOperator: html.indexOf('SP9SPM') >= 0,
+    hasLogbook: html.indexOf('HF50HSP') >= 0,
+    hasFrequency: html.indexOf('3.573 MHz') >= 0,
+  };
+}
+
 // ── Drive the handler ───────────────────────────────────────────────────────
 // Real map initialisation (production initMap with the stubbed Leaflet), so the
 // handler's rebuild has somewhere to draw. WebGL is unavailable in this
@@ -291,9 +344,15 @@ function runCase(activeCall, todayCount) {
   };
 }
 
-const results = {
-  emptyLog: runCase(null, 0),
-  withContacts: runCase(null, 3),
-  fromActiveContact: runCase('RN3YN', 3),
-};
-process.stdout.write(JSON.stringify(results));
+if (SCENARIO) {
+  // writeSync: the process exits on its own, but a piped stdout.write may not
+  // have flushed by then.
+  fs.writeSync(1, JSON.stringify(stationCard(SCENARIO)));
+} else {
+  const results = {
+    emptyLog: runCase(null, 0),
+    withContacts: runCase(null, 3),
+    fromActiveContact: runCase('RN3YN', 3),
+  };
+  process.stdout.write(JSON.stringify(results));
+}

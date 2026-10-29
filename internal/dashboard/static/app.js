@@ -182,12 +182,11 @@ function connectSSE(){
   });
   es.addEventListener('rig',function(e){var r=JSON.parse(e.data).payload;
     D('sse','rig',r.connected?(r.frequency||'?')+' '+(r.mode||''):'disconnected');
-    updateStationField('Rig',r.connected?'<span class=\"status-on\">●</span> Connected':'<span class=\"status-off\">○</span> Disconnected');
-    if(r.frequency)updateStationField('Frequency',esc(r.frequency)+(r.band?' <span class=\"stat-badge '+bandBadgeClass(r.band)+'\">'+esc(r.band)+'</span>':'')+(r.mode?' <span class=\"stat-badge '+modeBadgeClass(r.mode)+'\">'+esc(r.mode)+'</span>':'')+(r.submode?' <span class=\"stat-badge '+modeBadgeClass(r.submode)+'\">'+esc(r.submode)+'</span>':''));
+    cardState.rig=r;renderStationCard()
   });
   es.addEventListener('wsjtx',function(e){var w=JSON.parse(e.data).payload;
     D('sse','wsjtx',w.connected?'online':'offline');
-    updateStationField('WSJT-X',w.connected?'<span class=\"status-on\">●</span> Online':'<span class=\"status-off\">○</span> Offline')
+    cardState.wsjtx=w;renderStationCard()
   });
   es.addEventListener('stats',function(e){var s=JSON.parse(e.data).payload;
     D('sse','stats',{today:s.qsosToday,calls:s.uniqueCalls,rate5m:s.rate5m,rate15m:s.rate15m,rate60m:s.rate60m});
@@ -204,12 +203,11 @@ function connectSSE(){
       ownAprsLon=s.aprsPos?s.aprsPos.lon:null;
       ownAprsLocator=s.aprsLocator||'';
       var op=_ownPos();
-      initLocalMap(op.lat,op.lon);recentreLocalMap(op.lat,op.lon);updateAprsCircle(op.lat,op.lon,s.aprsRadiusKm||0);updateMapFromToday()}else{recentreLocalMapFromStation(s)}renderStation(s)
+      initLocalMap(op.lat,op.lon);recentreLocalMap(op.lat,op.lon);updateAprsCircle(op.lat,op.lon,s.aprsRadiusKm||0);updateMapFromToday()}else{recentreLocalMapFromStation(s)}cardState.station=s;renderStationCard()
   });
   es.addEventListener('operator',function(e){var o=JSON.parse(e.data).payload;
     D('sse','operator',o.callsign);
-    var opVal=o.callsign||ownStationCall;
-    updateStationField('Operator',opVal?opBadgeHTML(opVal,o.name):'—')
+    cardState.operator=o;renderStationCard()
   });
   es.addEventListener('logbook',function(e){var lb=JSON.parse(e.data).payload;
     D('sse','logbook',lb.name);
@@ -225,7 +223,7 @@ function connectSSE(){
         window._cqopsLastTodayLogbook=lb.name;
       }
     }
-    updateStationField('Logbook',esc(lb.name))
+    cardState.logbook=lb;renderStationCard()
   });
   es.addEventListener('partner',function(e){var p=JSON.parse(e.data).payload;
     D('sse','partner',p? p.call+' '+(p.imageUrl?'📷':''):'<cleared>');
@@ -397,7 +395,14 @@ function renderAll(snap){
       refreshOwnStationMarker();
     }
   }
-  renderStation(snap.station,snap.operator,snap.logbook,snap.rig,snap.wsjtx);
+  // A snapshot taken before the first rig/wsjtx push must not blank rows
+  // an event already filled, so keep whatever is already known.
+  cardState.station=snap.station||cardState.station;
+  cardState.operator=snap.operator||cardState.operator;
+  cardState.logbook=snap.logbook||cardState.logbook;
+  cardState.rig=snap.rig||cardState.rig;
+  cardState.wsjtx=snap.wsjtx||cardState.wsjtx;
+  renderStationCard();
   // Active QSO
   if(snap.activeQso&&snap.activeQso.call){switchToActive();renderHero(snap.activeQso,snap.partner)}
   else{switchToOverview();renderHero(null)}
@@ -633,7 +638,18 @@ function renderStation(st,op,lb,rig,wsjtx){
   }
   stationFields.innerHTML=rows.map(function(r){return'<dt>'+r[0]+'</dt><dd id=\"sf-'+r[0]+'\">'+r[1]+'</dd>'}).join('');
 }
-function updateStationField(key,val){var el=document.getElementById('sf-'+key);if(el)el.innerHTML=val}
+
+// Live values behind the station card. A `station` event carries only the
+// station payload, so re-rendering the card from that event alone blanked
+// every row fed by its own event: the card read "Rig o Disconnected",
+// "WSJT-X o Offline", "Logbook -" and "Frequency -" while the rig was on
+// the air, because each station push (every couple of seconds) wiped the
+// rows the rig/wsjtx/logbook events had just filled.
+var cardState={station:null,operator:null,logbook:null,rig:null,wsjtx:null};
+function renderStationCard(){
+  if(!cardState.station)return;
+  renderStation(cardState.station,cardState.operator,cardState.logbook,cardState.rig,cardState.wsjtx);
+}
 
 // ---- Stats ----
 // Band order for frequency-consistent badge sorting.

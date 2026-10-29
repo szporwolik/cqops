@@ -2,9 +2,7 @@ package dashboard
 
 import (
 	"encoding/json"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -48,34 +46,8 @@ type qsoLoggedResult struct {
 // today contact plus the station, and no partner dot), and put the new contact
 // at the top of today's list.
 func TestQsoLoggedHandlerRuns(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node is not installed; the dashboard handler test needs a JS engine")
-	}
-	app, err := staticFS.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatalf("read app.js: %v", err)
-	}
-	src := string(app)
-	idx := strings.LastIndex(src, "})();")
-	if idx < 0 {
-		t.Fatal("app.js does not end with the IIFE close, the test hook cannot be injected")
-	}
-	src = src[:idx] + testHook + src[idx:]
-
-	dir := t.TempDir()
-	appPath := filepath.Join(dir, "app.js")
-	if err := os.WriteFile(appPath, []byte(src), 0o600); err != nil {
-		t.Fatalf("write app.js: %v", err)
-	}
-	harness, err := os.ReadFile("testdata/qso_handler_harness.js")
-	if err != nil {
-		t.Fatalf("read harness: %v", err)
-	}
-	harnessPath := filepath.Join(dir, "qso_handler_harness.js")
-	if err := os.WriteFile(harnessPath, harness, 0o600); err != nil {
-		t.Fatalf("write harness: %v", err)
-	}
+	node := requireNode(t)
+	appPath, harnessPath := stageDashboardScript(t)
 
 	out, err := exec.Command(node, harnessPath, appPath).CombinedOutput()
 	if err != nil {
