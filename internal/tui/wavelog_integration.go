@@ -290,22 +290,24 @@ func postQSOSingle(url, key, sid string, qs *qso.QSO, db *sql.DB, uploadedRev in
 		// duplicates the contact or pushes the ADIF fallback on top of a row that
 		// is already there.
 		if wavelog.IsTimeout(cerr) || wavelog.IsServerError(cerr) {
-			if rid := backfillRemoteID(url, key, sid, qs, db); rid > 0 {
+			rid, asked := lookupRemoteID(url, key, sid, qs)
+			if rid > 0 {
 				applog.Warn("Wavelog: upload reported an error but the QSO is on the server — linking it",
 					"qso_id", qs.ID, "call", qs.Call, "remote_id", rid, "error", cerr)
 				attach(rid)
 				return true, true, remoteID, changed, nil
 			}
-			if wavelog.IsTimeout(cerr) {
-				// Still unknown: the first request may land at any moment, so
-				// sending it again now is exactly what creates duplicates. Leave the
-				// row unsent — the next upload reconciles before writing.
-				applog.Warn("Wavelog: upload timed out and the QSO is not on the server yet — leaving it unsent",
-					"qso_id", qs.ID, "call", qs.Call, "error", cerr)
+			// A timeout, or a lookup that could not be answered, leaves the outcome
+			// unknown: the first request may land at any moment, so writing again
+			// now is exactly what creates duplicates. The row stays unsent and the
+			// next upload reconciles before it writes.
+			if wavelog.IsTimeout(cerr) || !asked {
+				applog.Warn("Wavelog: upload outcome unknown — leaving the QSO unsent",
+					"qso_id", qs.ID, "call", qs.Call, "checked", asked, "error", cerr)
 				return false, false, 0, false, uploadStateUnknownErr(cerr)
 			}
-			// 5xx with the contact verifiably absent — the ADIF fallback cannot
-			// duplicate what the server does not have.
+			// 5xx, and the server confirms it does not have the contact — the ADIF
+			// fallback cannot duplicate what is not there.
 		}
 		applog.Warn("Wavelog: JSON create failed, falling back to ADIF", "qso_id", qs.ID, "error", cerr)
 	}
@@ -317,13 +319,14 @@ func postQSOSingle(url, key, sid string, qs *qso.QSO, db *sql.DB, uploadedRev in
 	}
 	// The ADIF attempt can be the one that timed out after committing.
 	if wavelog.IsTimeout(err) || wavelog.IsServerError(err) {
-		if rid := backfillRemoteID(url, key, sid, qs, db); rid > 0 {
+		rid, asked := lookupRemoteID(url, key, sid, qs)
+		if rid > 0 {
 			applog.Warn("Wavelog: ADIF upload reported an error but the QSO is on the server — linking it",
 				"qso_id", qs.ID, "call", qs.Call, "remote_id", rid, "error", err)
 			attach(rid)
 			return true, true, remoteID, changed, nil
 		}
-		if wavelog.IsTimeout(err) {
+		if wavelog.IsTimeout(err) || !asked {
 			return false, false, 0, false, uploadStateUnknownErr(err)
 		}
 	}
@@ -346,19 +349,29 @@ func uploadStateUnknownErr(err error) error {
 // returned id is NOT written here — callers attach it via SetWavelogID or
 // SetWavelogIDChecked so revision checks stay in one place.
 func backfillRemoteID(url, key, sid string, qs *qso.QSO, db *sql.DB) int64 {
+	rid, _ := lookupRemoteID(url, key, sid, qs)
+	return rid
+}
+
+// lookupRemoteID asks the server for this contact's remote id. asked reports
+// whether the question could be put at all: a failed lookup is NOT the same as
+// "the contact is absent", and a caller that decides whether to write again must
+// not confuse the two — an unanswered lookup plus a retry is exactly how the
+// 2026-10-29 duplicate would have been made.
+func lookupRemoteID(url, key, sid string, qs *qso.QSO) (id int64, asked bool) {
 	mode := qs.Mode
 	if strings.EqualFold(mode, "MFSK") && qs.Submode != "" {
 		mode = qs.Submode // canonical: MFSK+FT8 → FT8, same as buildCreateQSOInput
 	}
 	rid, ferr := wavelog.FindQSOID(url, key, sid, qs.Call, adifDateToISO(qs.QSODate), qs.TimeOn, qs.Band, mode)
 	if ferr != nil {
-		applog.Warn("Wavelog: remote id backfill failed", "qso_id", qs.ID, "call", qs.Call, "error", ferr)
-		return 0
+		applog.Warn("Wavelog: cannot check whether the QSO reached the server", "qso_id", qs.ID, "call", qs.Call, "error", ferr)
+		return 0, false
 	}
 	if rid > 0 {
 		applog.InfoDetail("Wavelog: remote id backfilled", fmt.Sprintf("qso_id=%d remote_id=%d", qs.ID, rid))
 	}
-	return rid
+	return rid, true
 }
 
 // buildCreateQSOInput maps a local QSO to the v2 JSON-create fields.

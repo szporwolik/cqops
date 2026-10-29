@@ -217,3 +217,44 @@ func TestUploadPlainFailureStillFallsBack(t *testing.T) {
 		t.Errorf("writes=%d adif=%d, want 2 writes with exactly 1 ADIF fallback", posts.Load(), adif.Load())
 	}
 }
+
+// TestUploadUnverifiedAbsenceIsNotAbsence: when the create fails with a 5xx and
+// the reconcile lookup cannot be answered either, the contact is not "verifiably
+// absent" — writing again would risk the duplicate this whole rule exists to
+// prevent. The row must stay unsent and no second write may leave.
+func TestUploadUnverifiedAbsenceIsNotAbsence(t *testing.T) {
+	var posts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/qso"):
+			posts.Add(1)
+			w.WriteHeader(http.StatusBadGateway)
+			fmt.Fprint(w, `{"error":{"code":"internal_error","message":"upstream died"}}`)
+		default:
+			// The lookup cannot be answered either: the server is still degraded.
+			w.WriteHeader(http.StatusServiceUnavailable)
+			fmt.Fprint(w, `{"error":{"code":"unavailable","message":"try later"}}`)
+		}
+	}))
+	defer srv.Close()
+	defer wavelog.OverrideTimeouts(200*time.Millisecond, 200*time.Millisecond, 200*time.Millisecond)()
+
+	m := newLifecycleTestModel(t)
+	id := insertTestQSO(t, m.App.DB, &qso.QSO{Call: "DL1AA", QSODate: "20261029", TimeOn: "230115", Band: "80m", Mode: "FT8"})
+	stored, err := store.GetQSOByID(m.App.DB, id)
+	if err != nil || stored == nil {
+		t.Fatalf("read QSO: %v", err)
+	}
+
+	ok, _, _, _, uerr := postQSOSingle(srv.URL, "wl2_test", "1", stored, m.App.DB, stored.WavelogDirtyRev)
+	if ok || uerr == nil {
+		t.Fatal("an upload whose outcome could not be verified must not be reported as done")
+	}
+	if got := posts.Load(); got != 1 {
+		t.Errorf("%d writes reached the server, want 1 — the ADIF fallback ran on an absence nobody verified", got)
+	}
+	if status := getWavelogStatus(t, m.App.DB, id); status != "no" {
+		t.Errorf("local row claims to be uploaded (%q) although nothing was confirmed", status)
+	}
+}
