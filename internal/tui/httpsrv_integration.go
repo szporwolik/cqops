@@ -132,10 +132,7 @@ func (m *Model) maybeHTTP() tea.Cmd {
 		seedStation.Callsign = st.Callsign
 		rp, hasRig := m.App.Config.Rigs[st.RigName]
 		if hasRig {
-			seedStation.Radio = rp.Name
-			if rp.Model != "" && rp.Model != rp.Name {
-				seedStation.Radio = rp.Name + " (" + rp.Model + ")"
-			}
+			seedStation.Radio = rigRadioLabel(rp)
 			seedStation.Antenna = rp.Antenna
 		}
 	}
@@ -653,10 +650,7 @@ func (m *Model) pushDashboardFast() {
 		stationInfo.Lat, stationInfo.Lon = gridToLatLon(grid)
 	}
 	if hasRig {
-		stationInfo.Radio = rp.Name
-		if rp.Model != "" && rp.Model != rp.Name {
-			stationInfo.Radio = rp.Name + " (" + rp.Model + ")"
-		}
+		stationInfo.Radio = rigRadioLabel(rp)
 		stationInfo.Antenna = rp.Antenna
 	}
 	// Power: prefer the form value (updated by rig polling), fall back to config.
@@ -970,6 +964,12 @@ func (m *Model) forcePushDashboardAll() {
 	// Clear throttle/cache state so pushDashboardState runs every panel.
 	lastDashboardPushTick = 0
 	lastAPRSPush = time.Time{}
+	// Today and Recent are pushed only when the data is marked dirty, and a
+	// switch replaces the whole data set without writing a QSO. Without this the
+	// new logbook's contacts never reached the browser: the panel kept the
+	// previous logbook's list (the browser clears it on the logbook event, so the
+	// map and Top QSOs stayed empty until the next save).
+	dashboardDataDirty = true
 	// Use an unset fingerprint instead of a sentinel id list so that an
 	// empty result (0 QSOs in a fresh logbook) cannot "match" the cleared
 	// cache.
@@ -1000,6 +1000,20 @@ type panelFingerprint struct {
 	ids    []int64
 	digest uint64
 	set    bool
+}
+
+// rigRadioLabel is the "Radio" row of the dashboard's station card: the preset
+// name with the model in parentheses when they differ. A preset that carries
+// only a model (or neither) must not render as a bare " (model)".
+func rigRadioLabel(rp config.RigPreset) string {
+	name := rp.Name
+	if name == "" {
+		name = rp.Model
+	}
+	if rp.Model == "" || rp.Model == name {
+		return name
+	}
+	return name + " (" + rp.Model + ")"
 }
 
 // newPanelFingerprint builds the id list and content digest for the dashboard
