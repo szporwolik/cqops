@@ -190,7 +190,7 @@ function connectSSE(){
     updateStationField('WSJT-X',w.connected?'<span class=\"status-on\">●</span> Online':'<span class=\"status-off\">○</span> Offline')
   });
   es.addEventListener('stats',function(e){var s=JSON.parse(e.data).payload;
-    D('sse','stats',{today:s.qsosToday,calls:s.uniqueCalls,rate:s.ratePerHour});
+    D('sse','stats',{today:s.qsosToday,calls:s.uniqueCalls,rate5m:s.rate5m,rate15m:s.rate15m,rate60m:s.rate60m});
     renderStats(s,todayQsos)
   });
   es.addEventListener('recent_qsos',function(e){var r=JSON.parse(e.data).payload;
