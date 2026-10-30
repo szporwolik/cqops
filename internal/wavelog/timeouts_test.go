@@ -46,6 +46,43 @@ func TestClientForMethodPicksTheDeadline(t *testing.T) {
 	}
 }
 
+// TestWriteDeadlineCoversAMeasuredServer pins the production write deadline
+// against the slowest write ever measured on a live deployment: 60.2 s per
+// accepted write on qsl.sp9moa.pl (2026-10-30), while reads answered in
+// 0.05–0.5 s. At 30 s every one of those writes was abandoned just before the
+// answer arrived, so the contact stayed unsent locally although it was on the
+// server. The margin must not be closed without a new measurement.
+func TestWriteDeadlineCoversAMeasuredServer(t *testing.T) {
+	const measuredSlowWrite = 60500 * time.Millisecond
+	if WriteDeadline <= measuredSlowWrite {
+		t.Errorf("WriteDeadline = %s, want more than the measured %s", WriteDeadline, measuredSlowWrite)
+	}
+	if got := writeClient.Timeout; got != WriteDeadline {
+		t.Errorf("write client deadline = %s, want %s", got, WriteDeadline)
+	}
+}
+
+// TestSlowWriteSucceedsOnTheWriteClient proves the deadline choice is real
+// behaviour and not just a constant: a write that takes far longer than the
+// read deadline still succeeds, because writes get their own client.
+func TestSlowWriteSucceedsOnTheWriteClient(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(150 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"data":{"id":99},"meta":{}}`)
+	}))
+	defer srv.Close()
+	defer OverrideTimeouts(40*time.Millisecond, 2*time.Second, 40*time.Millisecond)()
+
+	id, dup, err := CreateQSO(srv.URL, "wl2_test", CreateQSOInput{StationProfileID: 1, Call: "DL1AA"})
+	if err != nil {
+		t.Fatalf("a slow write must succeed on the write deadline, got %v", err)
+	}
+	if dup || id != 99 {
+		t.Errorf("id=%d dup=%v, want 99/false", id, dup)
+	}
+}
+
 // TestOverrideTimeoutsRestores closes the seam itself: a leaked short deadline
 // would make every later test in the package flaky.
 func TestOverrideTimeoutsRestores(t *testing.T) {

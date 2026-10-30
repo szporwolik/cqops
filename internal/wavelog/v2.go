@@ -158,6 +158,7 @@ func v2RequestWithClientCtx(ctx context.Context, client *http.Client, method, ba
 	if err != nil {
 		return 0, nil, FriendlyError(err)
 	}
+	started := time.Now()
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -171,6 +172,11 @@ func v2RequestWithClientCtx(ctx context.Context, client *http.Client, method, ba
 		// server may have received and committed the request. Callers decide
 		// what to do with that, so it gets its own error type.
 		if d, ok := clientDeadline(client, err); ok {
+			// Name the endpoint that ran out of time: during the 2026-10-30
+			// incident only the deadline was logged, so it was impossible to tell
+			// WHICH call stalled — reads answered in 0.1 s while writes hung.
+			applog.Warn("Wavelog: request ran out of time", "method", method, "path", path,
+				"deadline", d.String(), "elapsed", elapsedString(started))
 			return 0, nil, &TimeoutError{Timeout: d, err: err}
 		}
 		return 0, nil, FriendlyError(err)
@@ -197,9 +203,40 @@ func v2RequestWithClientCtx(ctx context.Context, client *http.Client, method, ba
 		if resp.StatusCode >= 500 {
 			return resp.StatusCode, respBody, &ServerError{Status: resp.StatusCode, err: err}
 		}
+		// A rejected request still tells the operator how slow the server is:
+		// the 403/400 answers during the incident came back in 0.1–0.3 s while
+		// the accepted writes took 60 s, which points at the post-write work
+		// rather than at the request itself.
+		logRequestDuration(method, path, resp.StatusCode, started)
 		return resp.StatusCode, respBody, err
 	}
+	logRequestDuration(method, path, resp.StatusCode, started)
 	return resp.StatusCode, respBody, nil
+}
+
+// slowReadThreshold is the read latency above which a lookup is worth a log
+// line: the callsign path is typed into, so a second per query is already
+// visible to the operator.
+const slowReadThreshold = time.Second
+
+// logRequestDuration records how long a request really took. Writes are always
+// logged (they are rare and their latency is what decides whether CQOps can
+// keep the remote id), reads only when they are slow enough to be felt.
+func logRequestDuration(method, path string, status int, started time.Time) {
+	elapsed := time.Since(started)
+	if method != http.MethodGet && method != http.MethodHead {
+		applog.Info("Wavelog: write finished", "method", method, "path", path,
+			"status", status, "duration", elapsedString(started))
+		return
+	}
+	if elapsed >= slowReadThreshold {
+		applog.Warn("Wavelog: slow read", "path", path, "status", status,
+			"duration", elapsedString(started))
+	}
+}
+
+func elapsedString(started time.Time) string {
+	return time.Since(started).Round(time.Millisecond).String()
 }
 
 // clientDeadline reports whether err is the client's own deadline firing (as
