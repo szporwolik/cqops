@@ -48,7 +48,10 @@ type editorMsg struct {
 	wlDupCount        int
 	wlFailCount       int
 	wlUnresolvedCount int
-	normalized        int
+	// wlUnconfirmed counts rows whose upload outcome is unknown (the server
+	// did not answer). They are rechecked later, never reported as failed.
+	wlUnconfirmed int
+	normalized    int
 	// norm* carry the station fields a normalize worker changed plus the
 	// affected local ids. They are immutable result data: the worker never
 	// touches the in-memory list, and the owner loop applies them after
@@ -166,6 +169,10 @@ type editorMsg struct {
 	// queues a PATCH of each latest revision. Batch uploads carry many
 	// rows, so the single-row wlUpChanged flag is not enough.
 	wlReconcileIDs []int64
+	// wlRecheck lists rows whose upload outcome is unknown (the server did
+	// not answer): they may well be stored remotely, so the model rechecks
+	// them later instead of leaving them reported as failed.
+	wlRecheck []wlRecheckTarget
 	// normRelease transfers the normalization worker's database lease to
 	// the post-normalize batch upload launched from its completion — the
 	// upload consumes it (or releases it when no upload follows), so a

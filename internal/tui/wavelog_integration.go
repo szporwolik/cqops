@@ -2,6 +2,7 @@ package tui
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -302,7 +303,7 @@ func postQSOSingle(url, key, sid string, qs *qso.QSO, db *sql.DB, uploadedRev in
 			// now is exactly what creates duplicates. The row stays unsent and the
 			// next upload reconciles before it writes.
 			if wavelog.IsTimeout(cerr) || !asked {
-				applog.Warn("Wavelog: upload outcome unknown — leaving the QSO unsent",
+				applog.Warn("Wavelog: upload outcome unknown — leaving the QSO unsent until the server confirms",
 					"qso_id", qs.ID, "call", qs.Call, "checked", asked, "error", cerr)
 				return false, false, 0, false, uploadStateUnknownErr(cerr)
 			}
@@ -333,12 +334,36 @@ func postQSOSingle(url, key, sid string, qs *qso.QSO, db *sql.DB, uploadedRev in
 	return ok, isDup, remoteID, changed, err
 }
 
+// uploadStateUnknownError marks an upload whose outcome could not be
+// determined: the request may still be committed by the server after the
+// client gave up. It is NOT a failure notice — the caller must schedule a
+// deferred recheck instead of telling the operator the contact was rejected.
+// The wrapped error keeps the transport detail (deadline, 5xx) for the log.
+type uploadStateUnknownError struct{ err error }
+
+func (e *uploadStateUnknownError) Error() string { return e.err.Error() }
+
+func (e *uploadStateUnknownError) Unwrap() error { return e.err }
+
+// isUploadStateUnknown reports whether an upload error means "we do not know"
+// rather than "the server refused it".
+func isUploadStateUnknown(err error) bool {
+	if err == nil {
+		return false
+	}
+	var u *uploadStateUnknownError
+	return errors.As(err, &u)
+}
+
 // uploadStateUnknownErr words a timeout for the operator. The contact is in the
 // local log either way — only its state on the server is unknown, and calling
 // it "upload failed" is wrong in exactly the case that happened live.
 func uploadStateUnknownErr(err error) error {
 	if wavelog.IsTimeout(err) {
-		return fmt.Errorf("%w — the contact is saved locally, its state on the server is unknown", err)
+		return &uploadStateUnknownError{fmt.Errorf("%w — the contact is saved locally, its state on the server is unknown", err)}
+	}
+	if wavelog.IsServerError(err) {
+		return &uploadStateUnknownError{err}
 	}
 	return err
 }

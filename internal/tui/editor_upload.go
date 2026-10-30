@@ -298,6 +298,8 @@ func (le *LogbookEditor) uploadBatchLeased(unsent []qso.QSO, lease func()) tea.C
 		// without an unprotected interval.
 		totalOK := 0
 		totalDup := 0
+		totalUnconfirmed := 0
+		var recheck []wlRecheckTarget
 		totalUnresolved := 0
 		totalFail := 0
 		totalRecon := 0
@@ -369,8 +371,10 @@ func (le *LogbookEditor) uploadBatchLeased(unsent []qso.QSO, lease func()) tea.C
 						totalOK += em.wlSentCount
 						totalDup += em.wlDupCount
 						totalUnresolved += em.wlUnresolvedCount
+						totalUnconfirmed += em.wlUnconfirmed
 						totalFail += em.wlFailCount
 						changedIDs = append(changedIDs, em.wlReconcileIDs...)
+						recheck = append(recheck, em.wlRecheck...)
 						if em.err != nil {
 							lastErr = em.err
 						}
@@ -387,17 +391,32 @@ func (le *LogbookEditor) uploadBatchLeased(unsent []qso.QSO, lease func()) tea.C
 				// Recover the contacts that are on the server instead of reporting
 				// the whole chunk as failed — a later re-send would duplicate them.
 				if wavelog.IsTimeout(err) || wavelog.IsServerError(err) {
-					if stored, chunkChanged := backfillBatchIDs(url, key, sid, db, chunk); stored > 0 {
+					stored, chunkChanged, answered := backfillBatchIDs(url, key, sid, db, chunk)
+					pending := unlinkedTargets(db, chunk)
+					if stored > 0 {
 						applog.Warn("Wavelog: chunk upload reported an error but the contacts are on the server",
 							"count", len(chunk), "recovered", stored, "error", err)
 						totalDup += stored
 						changedIDs = append(changedIDs, chunkChanged...)
-						if stored < len(chunk) {
-							totalFail += len(chunk) - stored
-							lastErr = err
-						}
+					}
+					if !answered {
+						// The server refused both the chunk and the confirmation
+						// lookup: the contacts may still land, so this is an
+						// unknown outcome, not a rejection.
+						applog.Warn("Wavelog: chunk upload outcome unknown — recheck later",
+							"count", len(pending), "error", err)
+						totalUnconfirmed += len(pending)
+						recheck = append(recheck, pending...)
+						lastErr = err
 						continue
 					}
+					// The lookup was answered and confirms absence: the chunk really
+					// did not land, and only the unrecovered contacts failed.
+					totalFail += len(pending)
+					if len(pending) > 0 {
+						lastErr = err
+					}
+					continue
 				}
 				applog.Error("Wavelog: chunk upload failed", "count", len(chunk), "error", err)
 				totalFail += len(chunk)
@@ -407,7 +426,7 @@ func (le *LogbookEditor) uploadBatchLeased(unsent []qso.QSO, lease func()) tea.C
 			// The remote accepted the chunk; how many of those remote ids
 			// made it into the local database decides whether each QSO
 			// counts as sent or as unresolved.
-			stored, chunkChanged := backfillBatchIDs(url, key, sid, db, chunk)
+			stored, chunkChanged, _ := backfillBatchIDs(url, key, sid, db, chunk)
 			changedIDs = append(changedIDs, chunkChanged...)
 			if result != nil && result.AllDuplicates {
 				totalDup += stored
@@ -423,11 +442,11 @@ func (le *LogbookEditor) uploadBatchLeased(unsent []qso.QSO, lease func()) tea.C
 		// identified BEFORE the upload must survive this failure return —
 		// their PATCHes are still required, losing them would leave the
 		// remote copies outdated.
-		if totalOK+totalDup+totalUnresolved == 0 && lastErr != nil {
+		if totalOK+totalDup+totalUnresolved+totalUnconfirmed == 0 && lastErr != nil {
 			return editorMsg{wlOK: false, err: lastErr, wlFailCount: totalFail,
 				wlCall: fmt.Sprintf("%d QSOs", len(unsent)), gen: gen, opSession: opSession, opSessionSet: true,
 				lbID: logbookID, wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid,
-				wlReconcileIDs: changedIDs, wlUpRelease: release}
+				wlReconcileIDs: changedIDs, wlRecheck: recheck, wlUpRelease: release}
 		}
 		var parts []string
 		if totalOK > 0 {
@@ -440,12 +459,15 @@ func (le *LogbookEditor) uploadBatchLeased(unsent []qso.QSO, lease func()) tea.C
 		if totalUnresolved > 0 {
 			parts = append(parts, fmt.Sprintf("%d accepted but remote id not stored", totalUnresolved))
 		}
+		if totalUnconfirmed > 0 {
+			parts = append(parts, fmt.Sprintf("%d not confirmed yet", totalUnconfirmed))
+		}
 		if totalFail > 0 {
 			parts = append(parts, fmt.Sprintf("%d failed", totalFail))
 		}
 		applog.InfoDetail("Wavelog: chunked upload done",
-			fmt.Sprintf("ok=%d dup=%d unresolved=%d fail=%d recon=%d total=%d",
-				totalOK, totalDup, totalUnresolved, totalFail, totalRecon, len(unsent)))
+			fmt.Sprintf("ok=%d dup=%d unresolved=%d unconfirmed=%d fail=%d recon=%d total=%d",
+				totalOK, totalDup, totalUnresolved, totalUnconfirmed, totalFail, totalRecon, len(unsent)))
 		return editorMsg{wlQSOID: unsent[0].ID,
 			wlOK:              true,
 			wlCall:            strings.Join(parts, ", "),
@@ -453,6 +475,7 @@ func (le *LogbookEditor) uploadBatchLeased(unsent []qso.QSO, lease func()) tea.C
 			wlDupCount:        totalDup,
 			wlFailCount:       totalFail,
 			wlUnresolvedCount: totalUnresolved,
+			wlUnconfirmed:     totalUnconfirmed,
 			gen:               gen,
 			opSession:         opSession,
 			opSessionSet:      true,
@@ -462,9 +485,25 @@ func (le *LogbookEditor) uploadBatchLeased(unsent []qso.QSO, lease func()) tea.C
 			wlUpKey:           key,
 			wlUpSID:           sid,
 			wlReconcileIDs:    changedIDs,
+			wlRecheck:         recheck,
 			wlUpRelease:       release,
 		}
 	}
+}
+
+// unlinkedTargets returns the chunk rows that still have no remote id — the
+// contacts whose outcome an unknown chunk result left open. They are rechecked
+// later with the identity and revision captured at preparation time.
+func unlinkedTargets(db *sql.DB, chunk []qso.QSO) []wlRecheckTarget {
+	out := make([]wlRecheckTarget, 0, len(chunk))
+	for _, q := range chunk {
+		row, err := store.GetQSOByID(db, q.ID)
+		if err != nil || row == nil || row.WavelogID > 0 {
+			continue
+		}
+		out = append(out, wlRecheckTarget{qID: q.ID, call: q.Call, snap: q, rev: q.WavelogDirtyRev})
+	}
+	return out
 }
 
 // uploadIndividual sends each unsent QSO one at a time, silently handling
@@ -484,6 +523,8 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 		dupCount := 0
 		failCount := 0
 		unresolved := 0
+		unconfirmed := 0
+		var recheck []wlRecheckTarget
 		var lastErr error
 		var changedIDs []int64
 
@@ -501,6 +542,15 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 				changedIDs = append(changedIDs, q.ID)
 			}
 			if !ok {
+				if isUploadStateUnknown(err) {
+					// The server may have stored this contact after the client
+					// gave up: recheck it later rather than calling it failed.
+					applog.Warn("Wavelog: individual upload outcome unknown — recheck later", "qso_id", q.ID, "call", q.Call, "error", err)
+					unconfirmed++
+					recheck = append(recheck, wlRecheckTarget{qID: q.ID, call: q.Call, snap: q, rev: q.WavelogDirtyRev})
+					lastErr = err
+					continue
+				}
 				applog.Warn("Wavelog: individual upload failed", "qso_id", q.ID, "call", q.Call, "error", err)
 				failCount++
 				lastErr = err
@@ -521,9 +571,9 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 		}
 
 		applog.InfoDetail("Wavelog: individual upload complete",
-			fmt.Sprintf("sent=%d dup=%d unresolved=%d fail=%d", sentCount, dupCount, unresolved, failCount))
+			fmt.Sprintf("sent=%d dup=%d unresolved=%d unconfirmed=%d fail=%d", sentCount, dupCount, unresolved, unconfirmed, failCount))
 
-		if failCount > 0 && sentCount+dupCount+unresolved == 0 {
+		if failCount > 0 && sentCount+dupCount+unresolved+unconfirmed == 0 {
 			return editorMsg{wlOK: false, err: lastErr, wlFailCount: failCount, wlCall: fmt.Sprintf("%d failed", failCount), gen: gen,
 				lbID: logbookID, wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid,
 				wlReconcileIDs: changedIDs, wlUpRelease: release}
@@ -538,6 +588,9 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 		if unresolved > 0 {
 			parts = append(parts, fmt.Sprintf("%d accepted but remote id not stored", unresolved))
 		}
+		if unconfirmed > 0 {
+			parts = append(parts, fmt.Sprintf("%d not confirmed yet", unconfirmed))
+		}
 		if failCount > 0 {
 			parts = append(parts, fmt.Sprintf("%d failed", failCount))
 		}
@@ -549,6 +602,7 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 			wlDupCount:        dupCount,
 			wlFailCount:       failCount,
 			wlUnresolvedCount: unresolved,
+			wlUnconfirmed:     unconfirmed,
 			gen:               gen,
 			lbID:              logbookID,
 			wlUpDB:            db,
@@ -556,6 +610,7 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 			wlUpKey:           key,
 			wlUpSID:           sid,
 			wlReconcileIDs:    changedIDs,
+			wlRecheck:         recheck,
 			wlUpRelease:       release,
 		}
 	}
@@ -600,12 +655,19 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 		// the global completion handler can queue the follow-up chain
 		// without an unprotected interval.
 		ok, isDup, rid, changed, err := postQSOSingle(url, key, sid, q, db, uploadedRev)
+		// An unknown outcome means the server may have stored the contact
+		// after the client gave up — recheck later instead of calling it
+		// failed and pushing the operator to upload it again by hand.
+		var recheck []wlRecheckTarget
+		if isUploadStateUnknown(err) {
+			recheck = []wlRecheckTarget{{qID: qID, call: call, snap: *q, rev: uploadedRev}}
+		}
 		// Remote acceptance and local persistence are SEPARATE outcomes:
 		// ok with no persisted id must be reported as unresolved.
 		return editorMsg{wlQSOID: qID, wlCall: call, wlOK: ok, wlDup: isDup, err: err, gen: gen, opSession: opSession, opSessionSet: true,
 			lbID:   logbookID,
 			wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid, wlUpChanged: changed, wlUpUnresolved: ok && rid == 0,
-			wlUpSnap: *q, wlUpRev: uploadedRev, wlUpRelease: release}
+			wlUpSnap: *q, wlUpRev: uploadedRev, wlUpRelease: release, wlRecheck: recheck}
 	}
 }
 
@@ -618,11 +680,15 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 // id could not be persisted count as unresolved: the remote accepted them,
 // but locally they still look unsent and will be re-offered on the next
 // upload.
-func backfillBatchIDs(url, key, sid string, db *sql.DB, chunk []qso.QSO) (stored int, changedIDs []int64) {
+//
+// answered reports whether the server could be asked at all. A failed list
+// request proves nothing about the contacts, so a caller deciding whether to
+// re-send must not read it as absence.
+func backfillBatchIDs(url, key, sid string, db *sql.DB, chunk []qso.QSO) (stored int, changedIDs []int64, answered bool) {
 	ids, berr := wavelog.FindQSOIDs(url, key, sid, len(chunk)+25)
 	if berr != nil {
-		applog.Warn("Wavelog: batch id backfill failed", "error", berr)
-		return 0, nil
+		applog.Warn("Wavelog: batch id backfill failed — cannot tell which contacts landed", "error", berr)
+		return 0, nil, false
 	}
 	for _, q := range chunk {
 		k := wavelog.MakeQSOIDKey(q.Call, q.Band, q.Mode, q.QSODate, q.TimeOn)
@@ -638,5 +704,5 @@ func backfillBatchIDs(url, key, sid string, db *sql.DB, chunk []qso.QSO) (stored
 			}
 		}
 	}
-	return stored, changedIDs
+	return stored, changedIDs, true
 }
