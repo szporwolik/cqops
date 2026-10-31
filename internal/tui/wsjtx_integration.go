@@ -176,10 +176,17 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 		qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
 	}
 
-	if err := qso.ValidateForSave(qs); err != nil {
-		applog.Error("WSJT-X: ADIF validation failed", "error", err.Error())
-		m.toasts.Error("WSJT-X: " + err.Error())
+	if errs := qso.ValidateForImport(qs); len(errs) > 0 {
+		applog.Error("WSJT-X: ADIF validation failed", "error", strings.Join(errs, "; "))
+		m.toasts.Error("WSJT-X: " + strings.Join(errs, "; "))
 		return nil, false // skip permanently
+	}
+	if strings.TrimSpace(qs.RSTRcvd) == "" {
+		// Accepted, but the operator should know the exchange was one-sided:
+		// WSJT-X logs a contact even when the report never arrived.
+		applog.Warn("WSJT-X: contact logged without a received report",
+			"call", qs.Call, "band", qs.Band, "mode", qs.Mode, "time_on", qs.TimeOn)
+		m.toasts.Warn(fmt.Sprintf("WSJT-X: %s logged without a received report", qs.Call))
 	}
 
 	// Duplicate detection — WSJT-X may re-send the same QSO ADIF.

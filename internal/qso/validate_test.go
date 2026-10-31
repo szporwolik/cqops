@@ -201,3 +201,63 @@ func TestValidateForSave(t *testing.T) {
 		t.Error("QSO without RST sent should fail")
 	}
 }
+
+// TestValidateForImportKeepsAWeakSignalContactWithoutAReport pins the rule that
+// an FT8/FT4 contact delivered by WSJT-X without a received report is still a
+// contact. WSJT-X writes <rst_rcvd:0> whenever the report never arrived (the
+// operator logged before it was decoded, or the partner closed with RR73), and
+// ADIF does not require the field. The manual form keeps requiring it.
+func TestValidateForImportKeepsAWeakSignalContactWithoutAReport(t *testing.T) {
+	base := QSO{
+		Call:    "IZ3XAN",
+		Band:    "40m",
+		Freq:    7.076153,
+		RSTSent: "-16",
+		QSODate: "20261031",
+		TimeOn:  "180415",
+	}
+
+	cases := []struct {
+		name        string
+		mode        string
+		submode     string
+		wantImport  bool // ValidateForImport accepts the record
+		wantManual  bool // Validate (the form) accepts it
+		wantMessage string
+	}{
+		{name: "FT8 without a received report", mode: "FT8", wantImport: true, wantMessage: "rst_rcvd"},
+		{name: "MFSK+FT4 without a received report", mode: "MFSK", submode: "FT4", wantImport: true, wantMessage: "rst_rcvd"},
+		{name: "MFSK+FT2 without a received report", mode: "MFSK", submode: "FT2", wantImport: true, wantMessage: "rst_rcvd"},
+		{name: "JT65 without a received report", mode: "JT65", wantImport: true, wantMessage: "rst_rcvd"},
+		// A spoken report is typed in: an empty one is a mistake, not a lost frame.
+		{name: "SSB without a received report", mode: "SSB", wantMessage: "rst_rcvd"},
+		{name: "CW without a received report", mode: "CW", wantMessage: "rst_rcvd"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			q := base
+			q.Mode, q.Submode = tc.mode, tc.submode
+			errs := ValidateForImport(&q)
+			gotImport := len(errs) > 0
+			if gotImport != !tc.wantImport {
+				t.Errorf("ValidateForImport = %v, want accepted=%v", errs, tc.wantImport)
+			}
+			if !tc.wantImport && tc.wantMessage != "" && !strings.Contains(strings.Join(errs, "; "), tc.wantMessage) {
+				t.Errorf("ValidateForImport = %v, want a %q error", errs, tc.wantMessage)
+			}
+			if manual := Validate(&q); len(manual) == 0 {
+				t.Errorf("the manual form accepted %s without a received report, want it refused", tc.mode)
+			}
+		})
+	}
+
+	// A missing sent report stays an error on both paths: WSJT-X always
+	// transmits one, so its absence means a broken record.
+	q := base
+	q.Mode = "FT8"
+	q.RSTSent = ""
+	if errs := ValidateForImport(&q); len(errs) == 0 {
+		t.Error("ValidateForImport accepted a contact with no sent report")
+	}
+}
