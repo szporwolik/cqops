@@ -1,9 +1,58 @@
 package wavelog
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
+
+// TimeoutError reports that a request got no answer within the client's
+// deadline. It is deliberately a distinct type, because a timeout says nothing
+// about whether the server acted on the request: on 2026-10-29 a degraded
+// Wavelog held a QSO insert past the 10 s deadline and committed it anyway, so
+// the operator saw "upload failed" for a contact that was already on the
+// server. Callers that write must reconcile (look the record up) before
+// sending it again, and nothing may treat this as "not uploaded".
+type TimeoutError struct {
+	Timeout time.Duration // the deadline that elapsed
+	err     error         // the underlying transport error
+}
+
+func (e *TimeoutError) Error() string {
+	if e.Timeout > 0 {
+		return fmt.Sprintf("no answer from Wavelog within %s", e.Timeout)
+	}
+	return "no answer from Wavelog"
+}
+
+// Unwrap keeps the transport error reachable (context.DeadlineExceeded, a
+// net.Error, …) for callers that match on it.
+func (e *TimeoutError) Unwrap() error { return e.err }
+
+// IsTimeout reports whether err is (or wraps) a TimeoutError.
+func IsTimeout(err error) bool {
+	var te *TimeoutError
+	return errors.As(err, &te)
+}
+
+// ServerError is a 5xx answer. The server rejected the request, but a proxy or
+// an upstream timeout in front of the database can answer 502/504 for a write
+// that was committed, so a failed write of this kind is reconciled before it is
+// retried — the same rule as TimeoutError.
+type ServerError struct {
+	Status int
+	err    error // the decoded error, used for the message
+}
+
+func (e *ServerError) Error() string { return e.err.Error() }
+func (e *ServerError) Unwrap() error { return e.err }
+
+// IsServerError reports whether err is (or wraps) a 5xx answer.
+func IsServerError(err error) bool {
+	var se *ServerError
+	return errors.As(err, &se)
+}
 
 // friendlyAPIError translates API v2 error codes into user-facing messages.
 func friendlyAPIError(e *APIError) error {
@@ -47,6 +96,11 @@ func FriendlyError(err error) error {
 	if apiErr, ok := err.(*APIError); ok {
 		return friendlyAPIError(apiErr)
 	}
+	// A TimeoutError already carries the message that matters (how long we
+	// waited), and the caller adds what it means for its own record.
+	if IsTimeout(err) {
+		return err
+	}
 	msg := err.Error()
 
 	// DNS / host not found — try to extract the hostname.
@@ -66,10 +120,12 @@ func FriendlyError(err error) error {
 		return fmt.Errorf("connection refused — is the server running?")
 	}
 
-	// Timeout
+	// Timeout (a request that never reached the typed path, e.g. a context
+	// cancelled from outside). The message no longer blames the URL: a slow
+	// server is the common cause, and the operator cannot fix that.
 	if strings.Contains(msg, "timeout") || strings.Contains(msg, "Timeout") ||
 		strings.Contains(msg, "deadline exceeded") {
-		return fmt.Errorf("connection timed out — check the URL and try again")
+		return fmt.Errorf("no answer from Wavelog — the server may be slow or unreachable")
 	}
 
 	// HTTP 401 — differentiate between invalid key and station access.

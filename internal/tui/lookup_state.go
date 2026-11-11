@@ -30,6 +30,7 @@ type lookupState struct {
 	wlWarnShown    string // last status error surfaced as a toast
 	wlRadioID      int64  // Wavelog radio id for the CQOps rig-state push (0 = not ensured yet)
 	lastRadioPush  time.Time
+	wlRadioFails   int // consecutive radio-state push failures (backoff; 0 = healthy)
 	wlNeed         bool
 	wlCall         string
 	wlLast         time.Time

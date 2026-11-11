@@ -17,6 +17,26 @@ import (
 // the QSO form) is pushed to the Wavelog radio resource.
 const wlRadioPushInterval = 15 * time.Second
 
+// wlRadioMaxPushInterval caps the backoff after repeated failures.
+const wlRadioMaxPushInterval = 5 * time.Minute
+
+// wlRadioPushBackoff grows the push interval while the server keeps failing:
+// 15 s, 30 s, 1 min, 2 min, 4 min, then every 5 minutes. A degraded Wavelog
+// answered 60 consecutive timeouts in 46 minutes before this existed — one
+// attempt every 15 s, each blocking for the whole client deadline, for a value
+// that is only informational. fails is the number of consecutive failures
+// (0 = healthy).
+func wlRadioPushBackoff(fails int) time.Duration {
+	d := wlRadioPushInterval
+	for i := 1; i < fails && d < wlRadioMaxPushInterval; i++ {
+		d *= 2
+	}
+	if d > wlRadioMaxPushInterval {
+		d = wlRadioMaxPushInterval
+	}
+	return d
+}
+
 type wlRadioEnsureMsg struct {
 	radio *wavelog.Radio
 	err   error
@@ -120,10 +140,18 @@ func (m *Model) handleWavelogRadioMsg(msg tea.Msg) bool {
 		return true
 	case wlRadioPushMsg:
 		if r.err != nil {
-			applog.Warn("Wavelog: radio state push failed", "error", r.err, "retried", r.retried)
-		} else if r.radio != nil && r.radio.ID != m.lookup.wlRadioID {
-			// A recreated radio has a new id.
-			m.lookup.wlRadioID = r.radio.ID
+			m.lookup.wlRadioFails++
+			applog.Warn("Wavelog: radio state push failed", "error", r.err, "retried", r.retried,
+				"failures", m.lookup.wlRadioFails, "next_in", wlRadioPushBackoff(m.lookup.wlRadioFails).String())
+		} else {
+			if m.lookup.wlRadioFails > 0 {
+				applog.Info("Wavelog: radio state push recovered", "after_failures", m.lookup.wlRadioFails)
+			}
+			m.lookup.wlRadioFails = 0
+			if r.radio != nil && r.radio.ID != m.lookup.wlRadioID {
+				// A recreated radio has a new id.
+				m.lookup.wlRadioID = r.radio.ID
+			}
 		}
 		return true
 	}

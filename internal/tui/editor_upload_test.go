@@ -998,7 +998,11 @@ func TestUploadBatch_PartialChunkFailure(t *testing.T) {
 	}
 }
 
-func TestUploadBatch_MockServerError(t *testing.T) {
+func TestUploadBatch_UnanswerableServerLeavesContactsUnconfirmed(t *testing.T) {
+	// Every endpoint fails, including the id lookup — so CQOps cannot tell
+	// whether the chunk landed. That is an unknown outcome, not a failure:
+	// calling it failed is exactly what pushed the operator to upload a
+	// contact that was already on the server (2026-10-29).
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", 500)
 	}))
@@ -1015,17 +1019,26 @@ func TestUploadBatch_MockServerError(t *testing.T) {
 	cmd := le.uploadBatch(unsent)
 	msg := execCmd(cmd)
 	em := msg.(editorMsg)
-	if em.wlOK {
-		t.Error("batch upload should fail on server 500")
+	if em.wlFailCount != 0 {
+		t.Errorf("wlFailCount = %d, want 0 — the server never said the contact was rejected", em.wlFailCount)
+	}
+	if em.wlUnconfirmed != 1 {
+		t.Errorf("wlUnconfirmed = %d, want 1", em.wlUnconfirmed)
+	}
+	if !strings.Contains(em.wlCall, "1 not confirmed yet") {
+		t.Errorf("wlCall = %q, want the contact reported as unconfirmed, not failed", em.wlCall)
+	}
+	if len(em.wlRecheck) != 1 || em.wlRecheck[0].qID != id1 {
+		t.Errorf("wlRecheck = %+v, want the unconfirmed contact queued for a recheck", em.wlRecheck)
 	}
 
-	// Verify QSO is NOT marked as uploaded after failure.
+	// The contact stays unsent locally until the server confirms it.
 	var remoteID int64
 	if err := le.db.QueryRow("SELECT wavelog_id FROM qsos WHERE id=?", id1).Scan(&remoteID); err != nil {
 		t.Fatalf("query qso %d: %v", id1, err)
 	}
 	if remoteID != 0 {
-		t.Errorf("QSO wavelog_id = %d, want 0 (upload failed)", remoteID)
+		t.Errorf("QSO wavelog_id = %d, want 0 (unconfirmed)", remoteID)
 	}
 }
 
@@ -2347,6 +2360,10 @@ func TestUploadBatchFailureKeepsReconciliationIDs(t *testing.T) {
 				},
 				"meta": map[string]any{"page": 1, "has_more": false},
 			})
+		case r.Method == http.MethodGet:
+			// Id backfill window: answered, and none of the rejected chunk is
+			// there — the rejection is confirmed, not merely unknown.
+			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{}})
 		case r.Method == http.MethodPatch && r.URL.Path == "/api/v2/qso/77":
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {

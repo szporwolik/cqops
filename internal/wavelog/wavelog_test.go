@@ -1,9 +1,11 @@
 package wavelog
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 // =============================================================================
@@ -47,9 +49,28 @@ func TestFriendlyError_Timeout(t *testing.T) {
 	}
 	for _, msg := range cases {
 		err := FriendlyError(errors.New(msg))
-		if err == nil || !strings.Contains(err.Error(), "timed out") {
+		// The message must not blame the URL: a timeout is a slow or unreachable
+		// server, and "check the URL" sent operators looking for a typo during a
+		// 46-minute Wavelog outage.
+		if err == nil || !strings.Contains(err.Error(), "no answer from Wavelog") {
 			t.Errorf("msg=%q: got %q", friendlyMsg(err), msg)
 		}
+		if err != nil && strings.Contains(err.Error(), "check the URL") {
+			t.Errorf("msg=%q: the timeout message blames the URL: %q", msg, friendlyMsg(err))
+		}
+	}
+}
+
+// TestFriendlyError_TypedTimeoutKeepsItsDeadline: a typed TimeoutError already
+// carries the deadline that elapsed, and nothing may rewrite it into the generic
+// string.
+func TestFriendlyError_TypedTimeoutKeepsItsDeadline(t *testing.T) {
+	err := FriendlyError(&TimeoutError{Timeout: 30 * time.Second, err: context.DeadlineExceeded})
+	if !strings.Contains(err.Error(), "30s") {
+		t.Errorf("got %q, want the deadline in the message", friendlyMsg(err))
+	}
+	if !IsTimeout(err) {
+		t.Error("FriendlyError dropped the timeout type")
 	}
 }
 

@@ -141,10 +141,12 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		}
 	}
 	// Push live rig state (freq/mode/power from the QSO form) to the
-	// Wavelog radio endpoint every 15 seconds.
+	// Wavelog radio endpoint — every 15 seconds while the server answers, with
+	// a growing interval after repeated failures so a degraded server is not
+	// hit every 15 seconds for hours.
 	wl := m.App.Logbook.Wavelog
 	if wl != nil && wl.Enabled && m.lookup.wlOnline && m.lookup.wlRadioID != 0 &&
-		time.Since(m.lookup.lastRadioPush) >= wlRadioPushInterval {
+		time.Since(m.lookup.lastRadioPush) >= wlRadioPushBackoff(m.lookup.wlRadioFails) {
 		if c := m.pushWavelogRadioCmd(); c != nil {
 			m.lookup.lastRadioPush = time.Now()
 			cmd = tea.Batch(cmd, c)
@@ -426,6 +428,17 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			retry = m.retryIDAttachCmd(r.db, r.url, r.key, r.sid, r.logbook, r.snap, r.uploadedRev, r.release)
 			r.release = nil
 		}
+		// An unknown outcome is not a failure: the server may commit the
+		// contact after the client gave up. Ask again a little later and link
+		// it as soon as the server confirms, instead of reporting a contact
+		// that IS on the server as rejected.
+		stateUnknown := !r.ok && isUploadStateUnknown(r.err)
+		var recheck tea.Cmd
+		if stateUnknown && r.qID != 0 && r.db != nil {
+			recheck = m.queueUploadRecheck(r.db, r.url, r.key, r.sid, r.logbook,
+				[]wlRecheckTarget{{qID: r.qID, call: r.call, snap: r.snap, rev: r.uploadedRev}}, 0, r.release)
+			r.release = nil
+		}
 		if r.release != nil {
 			r.release()
 		}
@@ -433,7 +446,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		// now shows a different database (IDs may collide), so skip all UI
 		// updates and notifications.
 		if r.logbook != "" && r.logbook != m.App.LogbookName {
-			return true, tea.Batch(reconcile, retry)
+			return true, tea.Batch(reconcile, retry, recheck)
 		}
 		if r.qID != 0 && m.ui.logbookEditor != nil && !r.unresolved {
 			m.ui.logbookEditor.UpdateWLStatus(r.qID, r.ok, r.remoteID)
@@ -460,12 +473,17 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 				}
 			}
 		} else {
-			if r.err != nil {
+			if stateUnknown {
+				// The contact may well be on the server — say what is actually
+				// happening (a confirmation is pending) instead of "failed",
+				// and skip the error alert: the recheck reports the end state.
+				m.toasts.Warn(fmt.Sprintf("Wavelog: %s — no answer, confirming with the server", r.call))
+			} else if r.err != nil {
 				m.toasts.Error(fmt.Sprintf("Wavelog: %s — %s", r.call, r.err.Error()))
 			} else {
 				m.toasts.Error(fmt.Sprintf("Wavelog: %s failed", r.call))
 			}
-			if n.Enabled && n.AllErrors {
+			if !stateUnknown && n.Enabled && n.AllErrors {
 				msg := fmt.Sprintf("QSO %s upload failed", r.call)
 				if r.err != nil {
 					msg = fmt.Sprintf("QSO %s: %s", r.call, r.err.Error())
@@ -482,7 +500,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		// the updated Wavelog status. Also flag needRefresh so the logbook
 		// editor (if open) reloads on the next tick.
 		m.needRefresh = true
-		return true, tea.Batch(m.refreshQSOS(), reconcile, retry)
+		return true, tea.Batch(m.refreshQSOS(), reconcile, retry, recheck)
+	case wlUploadRecheckMsg:
+		return true, m.handleUploadRecheck(r)
 	case wsjtxEnrichDoneMsg:
 		// Enrichment finished for a logbook the user has switched away from
 		// — refreshing would reload the new logbook's rows for nothing.

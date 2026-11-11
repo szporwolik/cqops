@@ -347,6 +347,13 @@ func (m *Model) handleEditorUploadCompletion(em editorMsg) tea.Cmd {
 		cmds = append(cmds, m.retryIDAttachCmd(em.wlUpDB, em.wlUpURL, em.wlUpKey, em.wlUpSID, logbook, em.wlUpSnap, em.wlUpRev, release))
 		release = nil
 	}
+	// Unknown upload outcomes may already be on the server: recheck them
+	// later instead of leaving them reported as failed. The recheck holds the
+	// lease across the wait and transfers it onward.
+	if len(em.wlRecheck) > 0 && em.wlUpDB != nil {
+		cmds = append(cmds, m.queueUploadRecheck(em.wlUpDB, em.wlUpURL, em.wlUpKey, em.wlUpSID, logbook, em.wlRecheck, 0, release))
+		release = nil
+	}
 	if len(em.wlReconcileIDs) > 0 && em.wlUpDB != nil {
 		for i, id := range em.wlReconcileIDs {
 			var l func()

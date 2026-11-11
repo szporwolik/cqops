@@ -905,11 +905,11 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		}
 		if em.wlQSOID != 0 {
 			if em.wlOK {
-				hasTally := em.wlSentCount+em.wlDupCount+em.wlFailCount+em.wlUnresolvedCount > 0
+				hasTally := em.wlSentCount+em.wlDupCount+em.wlFailCount+em.wlUnresolvedCount+em.wlUnconfirmed > 0
 				switch {
 				case em.wlUpUnresolved:
 					m.toasts.Warn(fmt.Sprintf("Wavelog: %s accepted but remote id not stored — will retry", em.wlCall))
-				case hasTally && (em.wlFailCount > 0 || em.wlUnresolvedCount > 0):
+				case hasTally && (em.wlFailCount > 0 || em.wlUnresolvedCount > 0 || em.wlUnconfirmed > 0):
 					m.toasts.Warn("Wavelog: " + em.wlCall)
 				case hasTally:
 					m.toasts.Success("Wavelog: " + em.wlCall)
@@ -921,9 +921,15 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, em.wlOK && !em.wlUpUnresolved, 0)
 				m.ui.logbookEditor.needsReload = true
 				// The follow-up chains (reconciliation PATCH for wlUpChanged,
-				// id-attach retry for wlUpUnresolved) are queued GLOBALLY in
+				// id-attach retry for wlUpUnresolved, deferred recheck of an
+				// unknown outcome) are queued GLOBALLY in
 				// handleEditorUploadCompletion — they must run against the
 				// originating logbook even when this editor is not visible.
+			} else if isUploadStateUnknown(em.err) {
+				// The contact may be on the server: say that the confirmation is
+				// pending instead of showing a failure.
+				m.toasts.Warn(fmt.Sprintf("Wavelog: %s — no answer, confirming with the server", em.wlCall))
+				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, false, 0)
 			} else {
 				if em.err != nil {
 					m.toasts.Error(fmt.Sprintf("Wavelog: %s — %s", em.wlCall, em.err.Error()))

@@ -31,7 +31,7 @@ type Radio struct {
 // ListRadios returns all radios owned by the token. The list endpoint is
 // not paginated.
 func ListRadios(baseURL, apiKey string) ([]Radio, error) {
-	_, body, err := v2Request(http.MethodGet, baseURL, apiKey, "/radio", nil, nil)
+	_, body, err := v2RequestRadio(http.MethodGet, baseURL, apiKey, "/radio", nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +107,7 @@ func PushRadio(baseURL, apiKey, name string, s RadioState) (*Radio, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, respBody, err := v2Request(http.MethodPost, baseURL, apiKey, "/radio", nil, body)
+	_, respBody, err := v2RequestRadio(http.MethodPost, baseURL, apiKey, "/radio", nil, body)
 	if err != nil {
 		return nil, err
 	}

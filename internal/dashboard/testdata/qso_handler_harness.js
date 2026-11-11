@@ -393,12 +393,53 @@ function runCase(activeCall, todayCount) {
   };
 }
 
-if (MODE === 'station-card' || MODE === 'today') {
+// ratesCase drives the stats panel through the events that redraw it. The
+// today and qso_logged handlers repaint the panel from the contact list alone —
+// they carry no statistics — so passing null there must not wipe the QSO rate:
+// the server is the only source for the sliding windows.
+function ratesCase(name) {
+  const es = sseHandlers[sseHandlers.length - 1] || {};
+  const emit = (event, payload) => {
+    const handlers = es[event] || [];
+    if (!handlers.length) throw new Error('app.js registered no ' + event + ' handler');
+    handlers.forEach((fn) => fn({data: JSON.stringify({payload})}));
+  };
+  const rateRow = () => {
+    const html = getEl('stats-fields').innerHTML;
+    const m = html.match(/5m (\d+)[\s\S]*?15m (\d+)[\s\S]*?1h (\d+)/);
+    return m ? [m[1], m[2], m[3]] : null;
+  };
+  const rows = (ids) => ids.map((id) => ({id: String(id), call: 'SP' + id + 'ZZ',
+    band: '20m', mode: 'SSB', grid: 'JO90', country: 'Poland'}));
+  const steps = [];
+  const step = (label) => steps.push({label: label, rates: rateRow()});
+  const stats = {qsosToday: 29, uniqueCalls: 29, dxcc: 17, grids: 28, bands: 4, modes: 2,
+                 rate5m: 2, rate15m: 8, rate60m: 17};
+
+  if (name === 'survives-redraws') {
+    emit('stats', stats); step('after stats');
+    emit('today', rows([3, 2, 1])); step('after a contact arrives');
+    emit('qso_logged', rows([4])[0]); step('after logging a contact');
+    emit('stats', {qsosToday: 30, uniqueCalls: 30, dxcc: 17, grids: 29, bands: 4, modes: 2,
+                   rate5m: 3, rate15m: 9, rate60m: 18}); step('after the next stats');
+  } else if (name === 'switch-resets') {
+    emit('logbook', {name: 'HF50HSP'});
+    emit('stats', stats); step('logbook A stats');
+    emit('logbook', {name: 'SP9XYZ'}); emit('today', []); step('after switching to B');
+  } else {
+    throw new Error('unknown rates scenario: ' + JSON.stringify(name));
+  }
+  return {scenario: name, steps: steps};
+}
+
+if (MODE === 'station-card' || MODE === 'today' || MODE === 'rates') {
   // writeSync: the process exits on its own, but a piped stdout.write may not
   // have flushed by then.
   const out = MODE === 'today'
     ? todayCase(CASE)
-    : stationCard(CASE || 'events-first');
+    : MODE === 'rates'
+      ? ratesCase(CASE || 'survives-redraws')
+      : stationCard(CASE || 'events-first');
   fs.writeSync(1, JSON.stringify(out));
 } else {
   const results = {

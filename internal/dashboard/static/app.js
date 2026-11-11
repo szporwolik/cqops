@@ -110,6 +110,19 @@ function setState(active){
 // one event does not rebuild every marker and path twice — each rebuild drops
 // the layers and recreates up to 200 markers and 150 routes.
 function overviewState(){D('state','overview');setState(false);activeGrid=null}
+// lastRates keeps the QSO-rate numbers from the last stats event. The today and
+// qso_logged handlers redraw the stats panel from the contact list alone — they
+// carry no statistics, so passing null wiped the rate row to 5m 0 / 15m 0 / 1h 0
+// after every logged contact until the next minute tick put the real numbers
+// back. The server is the only source for the sliding windows (they need UTC
+// timestamps), so the last payload it sent is remembered here and reused.
+var lastRates={rate5m:0,rate15m:0,rate60m:0};
+function rememberRates(st){
+  if(!st)return;
+  if(st.rate5m!=null||st.rate15m!=null||st.rate60m!=null){
+    lastRates={rate5m:st.rate5m||0,rate15m:st.rate15m||0,rate60m:st.rate60m||0};
+  }
+}
 function switchToOverview(){overviewState();updateMapFromToday()}
 function switchToActive(){D('state','active');setState(true)}
 
@@ -217,6 +230,8 @@ function connectSSE(){
       // the map and Top QSOs show no stale markers until the fresh today event
       // arrives (the switch pushes the logbook event before the list).
       if(window._cqopsTodayLogbook&&window._cqopsTodayLogbook!==lb.name){
+        // The rates belong to the previous logbook too.
+        lastRates={rate5m:0,rate15m:0,rate60m:0};
         todayQsos=[];updateMapFromToday();renderStats(null,[]);renderTopQSOs();
       }
       window._cqopsTodayLogbook=lb.name;
@@ -701,7 +716,8 @@ function renderStats(st,todayBuf){
   var modeList=Object.keys(modeFreq).sort(function(a,b){return modeFreq[b]-modeFreq[a]});
   var opList=Object.keys(opFreq).sort(function(a,b){return opFreq[b]-opFreq[a]});
   // Render fields — bands/modes as badges, operators as count+top-3.
-  var rate5=st.rate5m||0,rate15=st.rate15m||0,rate60=st.rate60m||0;
+  rememberRates(st);
+  var rate5=lastRates.rate5m,rate15=lastRates.rate15m,rate60=lastRates.rate60m;
   var opsTotal=st.operators||opList.length||(ownStationCall?1:0);
   statsFields.innerHTML=[
     ['QSOs',qsosToday||0],

@@ -14,8 +14,42 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 )
 
-// httpClient is shared across all regular Wavelog API v2 calls.
+// httpClient is shared across all regular Wavelog API v2 reads. Ten seconds
+// is right for a request on the operator's typing path (a callsign lookup) —
+// the answer is either there or it is not worth waiting for.
 var httpClient = &http.Client{Timeout: 10 * time.Second}
+
+// writeClient is used for requests that change data on the server (QSO create,
+// PATCH, delete, ADIF import). Ten seconds turned out to be too short for an
+// insert on a loaded server: on 2026-10-29 a degraded Wavelog held the write,
+// the client gave up at 10 s, and the server committed the contact anyway. The
+// deadline is 90 s because 30 s was measured to still be too short on a live
+// deployment (2026-10-30, qsl.sp9moa.pl): reads answered in 0.05–0.5 s while
+// EVERY write took 60.2 s, so CQOps gave up twice per write just before the
+// answer — and the remote id — arrived. A timeout on a write is still reported
+// as an unknown outcome, never as "not uploaded" (see TimeoutError).
+const WriteDeadline = 90 * time.Second
+
+var writeClient = &http.Client{Timeout: WriteDeadline}
+
+// radioClient is the deadline for the live rig-state push: high cadence,
+// cosmetic data, so a hung server costs a few seconds per attempt instead of
+// blocking the push for ten.
+var radioClient = &http.Client{Timeout: 5 * time.Second}
+
+// OverrideTimeouts replaces the deadline of every client and returns a function
+// that restores the originals. It exists for tests: the timeout paths are the
+// ones that must never re-send a write, and waiting 10 or 30 seconds for each
+// of them is not an option. Production code never calls it.
+func OverrideTimeouts(read, write, radio time.Duration) (restore func()) {
+	oldRead, oldWrite, oldRadio := httpClient, writeClient, radioClient
+	httpClient = &http.Client{Timeout: read}
+	writeClient = &http.Client{Timeout: write}
+	radioClient = &http.Client{Timeout: radio}
+	return func() {
+		httpClient, writeClient, radioClient = oldRead, oldWrite, oldRadio
+	}
+}
 
 // downloadClient has a very long timeout — used only for the paginated
 // ADIF export (format=adif) which streams large responses.
