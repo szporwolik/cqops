@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.11.5 — unreleased
+
+> **Development cycle for the next release.** Work in progress on `dev`; nothing here is published yet, and the version will be dated when the release is cut.
+
+- **Nothing yet.** Planned additions and fixes land in this section as they are finished.
+
 ## v0.11.4 — 2026-11-11
 
 > **A reliability release for the Wavelog link and the QSO log.** A degraded Wavelog that needs a full minute to answer a write no longer costs CQOps a contact: writes get 90 seconds, a timeout counts as an unknown outcome rather than a failure, and the contact links itself once the server confirms — with exactly one write. WSJT-X contacts that arrive without a received report are logged instead of dropped for the weak-signal modes, the dashboard keeps the real QSO rate through every repaint, and the live rig-state push backs off instead of hammering a struggling server. Every Wavelog request now logs its own duration, so a slow server is visible in the log instead of guessed at.
